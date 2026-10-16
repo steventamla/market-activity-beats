@@ -1,9 +1,12 @@
 {
-  "name": "trade-beats",
+  "name": "market-activity-beats",
   "version": "1.0.0",
   "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
-    "express": "^4.19.2",
-    "nodemailer": "^6.9.13"
+    "express": "^4.18.2",
+    "resend": "^3.0.0"
   }
 }
