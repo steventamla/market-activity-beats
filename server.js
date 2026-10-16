@@ -1,8 +1,14 @@
 const express = require('express');
+const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+
+// Serve the HTML Dashboard
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // 7-Pair Basket Mapping for each Major Currency
 const BASKET_MAP = {
@@ -24,15 +30,11 @@ let latestScanData = {
   active_currencies: []
 };
 
-app.get('/', (req, res) => {
-  res.send('Market Activity Scanner is active (Operating hours: 6 AM to 11 PM)');
-});
-
 app.get('/latest-scan', (req, res) => {
   res.json(latestScanData);
 });
 
-// Manual trigger endpoint so you can run a scan on demand anytime
+// Manual trigger endpoint
 app.get('/scan', async (req, res) => {
   await executeMarketScan();
   res.json(latestScanData);
@@ -41,7 +43,6 @@ app.get('/scan', async (req, res) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function executeMarketScan() {
-  // Check if current time is within 6:00 AM and 11:00 PM
   const currentHour = new Date().getHours();
   if (currentHour < 6 || currentHour >= 23) {
     console.log(`Skipping scan. Outside operating hours (6 AM - 11 PM). Current hour: ${currentHour}`);
@@ -139,7 +140,7 @@ async function executeMarketScan() {
   }
 }
 
-// Run every 1 hour (60 minutes) to respect Twelve Data free limits (~768 requests/day)
+// Run every 1 hour
 const ONE_HOUR = 60 * 60 * 1000;
 setInterval(executeMarketScan, ONE_HOUR);
 
