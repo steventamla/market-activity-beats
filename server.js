@@ -21,9 +21,6 @@ app.get('/', (req, res) => {
             --text-muted: #8a99ad;
             
             /* --- COLOR THEMING OPTIONS --- */
-            /* Option A (Default Neon): BUY = #00e676, SELL = #ff3d00 */
-            /* Option B (Cyan & Amber):  BUY = #00e5ff, SELL = #ffab00 */
-            /* Option C (Teal & Soft Red): BUY = #26a69a, SELL = #ef5350 */
             --accent-green: #00e676; 
             --accent-green-bg: rgba(0, 230, 118, 0.15);
             
@@ -270,6 +267,15 @@ async function executeMarketScan() {
     console.error(error);
   }
 }
+
+// Automated scheduler: run every hour between 6 AM and 11 PM
+setInterval(async () => {
+  const currentHour = new Date().getHours();
+  if (currentHour >= 6 && currentHour <= 23) {
+    console.log('Running scheduled market scan...');
+    await executeMarketScan();
+  }
+}, 60 * 60 * 1000);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
