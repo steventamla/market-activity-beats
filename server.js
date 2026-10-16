@@ -8,6 +8,19 @@ app.get('/', (req, res) => {
   res.send('Trade Beats Scanner is active');
 });
 
+app.get('/price/:symbol', async (req, res) => {
+  const symbol = req.params.symbol;
+  const apiKey = process.env.TWELVE_DATA_API_KEY;
+
+  try {
+    const response = await fetch(`https://api.twelvedata.com/price?symbol=${symbol}&apikey=${apiKey}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch price data' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
