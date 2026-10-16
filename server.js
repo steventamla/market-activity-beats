@@ -8,8 +8,8 @@ app.get('/', (req, res) => {
   res.send('Trade Beats Scanner is active');
 });
 
-app.get('/price/:symbol', async (req, res) => {
-  const symbol = req.params.symbol;
+app.get('/price', async (req, res) => {
+  const symbol = req.query.symbol || 'EUR/USD';
   const apiKey = process.env.TWELVE_DATA_API_KEY;
 
   try {
