@@ -18,122 +18,131 @@ const BASKET_MAP = {
 
 const TIMEFRAMES = ['1min', '3min', '5min', '15min', '1h', '4h'];
 
+let latestScanData = {
+  scan_timestamp: null,
+  active_signals_count: 0,
+  active_currencies: []
+};
+
 app.get('/', (req, res) => {
-  res.send('Market Activity Scanner is active');
+  res.send('Market Activity Scanner is active (Operating hours: 6 AM to 11 PM)');
 });
 
-// Main Endpoint: Scans all currencies and timeframes for institutional basket activity
+app.get('/latest-scan', (req, res) => {
+  res.json(latestScanData);
+});
+
+// Manual trigger endpoint so you can run a scan on demand anytime
 app.get('/scan', async (req, res) => {
-  const apiKey = process.env.TWELVE_DATA_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'TWELVE_DATA_API_KEY is not configured in environment variables.' });
+  await executeMarketScan();
+  res.json(latestScanData);
+});
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function executeMarketScan() {
+  // Check if current time is within 6:00 AM and 11:00 PM
+  const currentHour = new Date().getHours();
+  if (currentHour < 6 || currentHour >= 23) {
+    console.log(`Skipping scan. Outside operating hours (6 AM - 11 PM). Current hour: ${currentHour}`);
+    return;
   }
 
+  const apiKey = process.env.TWELVE_DATA_API_KEY;
+  if (!apiKey) {
+    console.error('TWELVE_DATA_API_KEY is missing.');
+    return;
+  }
+
+  console.log('Starting scheduled market activity scan...');
   const activeResults = [];
 
   try {
-    // Loop through each major currency basket
     for (const [currency, pairs] of Object.entries(BASKET_MAP)) {
-      
-      // Loop through each required timeframe
       for (const tf of TIMEFRAMES) {
-        let expandingPairsCount = 0;
+        const symbolsParam = pairs.join(',');
+        const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${tf}&outputsize=15&apikey=${apiKey}`;
+        
+        const response = await fetch(url);
+        const data = await response.json();
+
+        const seriesData = data.status ? { [pairs[0]]: data } : data;
+
         let bullishVotes = 0;
         let bearishVotes = 0;
-        let latestCandleDetails = null;
+        let expandingPairsCount = 0;
 
-        // Evaluate each pair in the basket concurrently for this timeframe
-        const pairPromises = pairs.map(async (symbol) => {
-          try {
-            const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${tf}&outputsize=15&apikey=${apiKey}`;
-            const response = await fetch(url);
-            const data = await response.json();
+        pairs.forEach((symbol) => {
+          const pairObj = seriesData[symbol];
+          if (!pairObj || !pairObj.values || pairObj.values.length < 15) return;
 
-            if (data.status === 'error' || !data.values || data.values.length < 15) return null;
+          const candles = pairObj.values;
+          const current = candles[0];
+          const previous = candles[1];
 
-            const candles = data.values;
-            const latest = candles[0];
-            
-            // Calculate current candle range
-            const high = parseFloat(latest.high);
-            const low = parseFloat(latest.low);
-            const open = parseFloat(latest.open);
-            const close = parseFloat(latest.close);
-            const currentRange = high - low;
+          const currentRange = parseFloat(current.high) - parseFloat(current.low);
+          const previousRange = parseFloat(previous.high) - parseFloat(previous.low);
 
-            // Calculate ATR(14) baseline from prior candles
-            const priorCandles = candles.slice(1, 15);
-            const avgRange = priorCandles.reduce((sum, c) => sum + (parseFloat(c.high) - parseFloat(c.low)), 0) / priorCandles.length;
+          const prior14 = candles.slice(1, 15);
+          const avgRange = prior14.reduce((sum, c) => sum + (parseFloat(c.high) - parseFloat(c.low)), 0) / 14;
 
-            // Volatility Expansion Condition (Threshold >= 1.8x ATR baseline)
-            const isExpanding = currentRange >= (avgRange * 1.8);
+          const isCurrentExpanding = currentRange >= (avgRange * 1.8);
+          const isPreviousExpanding = previousRange >= (avgRange * 1.8);
+          
+          if (isCurrentExpanding || isPreviousExpanding) {
+            expandingPairsCount++;
 
-            // Determine directional orientation relative to the base currency
-            const isBaseCurrencyFirst = symbol.startsWith(currency);
-            const isBullishCandle = close > open;
-            
-            let directionalBias = 'NEUTRAL';
-            if (isExpanding) {
-              if (isBaseCurrencyFirst) {
-                directionalBias = isBullishCandle ? 'BUY' : 'SELL';
-              } else {
-                directionalBias = isBullishCandle ? 'SELL' : 'BUY'; // Inverse for quote pairs like EUR/GBP for GBP
-              }
+            const targetCandle = isCurrentExpanding ? current : previous;
+            const isBullish = parseFloat(targetCandle.close) >= parseFloat(targetCandle.open);
+            const isBase = symbol.startsWith(currency);
+
+            let bias = 'NEUTRAL';
+            if (isBase) {
+              bias = isBullish ? 'BUY' : 'SELL';
+            } else {
+              bias = isBullish ? 'SELL' : 'BUY';
             }
 
-            return {
-              symbol,
-              isExpanding,
-              bias: directionalBias,
-              datetime: latest.datetime
-            };
-          } catch (err) {
-            return null;
+            if (bias === 'BUY') bullishVotes++;
+            if (bias === 'SELL') bearishVotes++;
           }
         });
 
-        const pairResults = (await Promise.all(pairPromises)).filter(Boolean);
-
-        if (pairResults.length === 0) continue;
-
-        // Tally results across the basket
-        pairResults.forEach(resItem => {
-          if (resItem.isExpanding) {
-            expandingPairsCount++;
-            if (resItem.bias === 'BUY') bullishVotes++;
-            if (resItem.bias === 'SELL') bearishVotes++;
-          }
-        });
-
-        // Basket Cohesion Rule: At least 5 out of 7 (or majority for smaller baskets) must align
-        const minRequiredPairs = Math.min(5, pairs.length);
+        const minRequired = Math.min(5, pairs.length);
         const dominantBias = bullishVotes > bearishVotes ? 'BUY' : 'SELL';
         const dominantVotes = Math.max(bullishVotes, bearishVotes);
 
-        if (expandingPairsCount >= minRequiredPairs && dominantVotes >= minRequiredPairs) {
+        if (expandingPairsCount >= minRequired && dominantVotes >= minRequired) {
           activeResults.push({
             currency,
             timeframe: tf,
             bias: dominantBias,
-            expanding_pairs_count: `${expandingPairsCount}/${pairs.length}`,
-            detected_at: pairResults[0]?.datetime || 'Just now',
+            cohesion: `${dominantVotes}/${pairs.length} pairs aligned`,
             status: 'ACTIVE_DISPLACEMENT'
           });
         }
+
+        await sleep(200);
       }
     }
 
-    res.json({
+    latestScanData = {
       scan_timestamp: new Date().toISOString(),
-      active_signals_found: activeResults.length,
-      results: activeResults
-    });
+      active_signals_count: activeResults.length,
+      active_currencies: activeResults
+    };
+
+    console.log(`Scan completed. Found ${activeResults.length} active signals.`);
 
   } catch (error) {
-    res.status(500).json({ error: 'Failed to execute institutional market scan.' });
+    console.error('Error during market scan:', error);
   }
-});
+}
+
+// Run every 1 hour (60 minutes) to respect Twelve Data free limits (~768 requests/day)
+const ONE_HOUR = 60 * 60 * 1000;
+setInterval(executeMarketScan, ONE_HOUR);
 
 app.listen(PORT, () => {
-  console.log(`Market Activity Scanner running on port ${PORT}`);
+  console.log(`Market Activity Scanner active on port ${PORT}`);
 });
