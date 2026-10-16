@@ -4,7 +4,7 @@ const { Resend } = require('resend');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const resend = new Resend('re_c7qBvNAT_8C6Zm1Z37xjiRe9RAFw6ezHd');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 app.use(express.json());
 
