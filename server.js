@@ -5,7 +5,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 app.get('/', (req, res) => {
-  res.send('Trade Beats Scanner is active');
+  res.send('Market Activity Scanner is active');
 });
 
 app.get('/price', async (req, res) => {
