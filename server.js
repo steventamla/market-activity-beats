@@ -19,10 +19,17 @@ app.get('/', (req, res) => {
             --bg-card: #182232;
             --text-main: #f0f4f8;
             --text-muted: #8a99ad;
-            --accent-green: #00e676;
+            
+            /* --- COLOR THEMING OPTIONS --- */
+            /* Option A (Default Neon): BUY = #00e676, SELL = #ff3d00 */
+            /* Option B (Cyan & Amber):  BUY = #00e5ff, SELL = #ffab00 */
+            /* Option C (Teal & Soft Red): BUY = #26a69a, SELL = #ef5350 */
+            --accent-green: #00e676; 
             --accent-green-bg: rgba(0, 230, 118, 0.15);
-            --accent-red: #ff3d00;
+            
+            --accent-red: #ff3d00; 
             --accent-red-bg: rgba(255, 61, 0, 0.15);
+            
             --border-color: #233145;
             --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
         }
@@ -37,7 +44,10 @@ app.get('/', (req, res) => {
         button { background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
         button:hover { background: #1f2d42; }
         .matrix-container { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; margin-bottom: 32px; }
-        .matrix-title { font-size: 1rem; margin-bottom: 16px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .matrix-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .matrix-title { font-size: 1rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .toggle-btn { background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); cursor: pointer; font-size: 1.1rem; padding: 2px 10px; border-radius: 4px; }
+        .toggle-btn:hover { color: var(--text-main); background: var(--border-color); }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px; text-align: center; border-bottom: 1px solid var(--border-color); font-size: 0.9rem; }
         th { color: var(--text-muted); font-weight: 500; }
@@ -51,6 +61,7 @@ app.get('/', (req, res) => {
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .card-title { font-size: 1.2rem; font-weight: 700; font-family: var(--font-mono); }
         .card-body p { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
+        .collapsed { display: none !important; }
     </style>
 </head>
 <body>
@@ -68,23 +79,38 @@ app.get('/', (req, res) => {
         <button onclick="fetchScanData()">Run Manual Scan</button>
         <button onclick="loadLatestScan()">Fetch Latest Scan</button>
     </div>
-    <div class="matrix-container">
-        <div class="matrix-title">Multi-Timeframe Currency Matrix</div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="text-align: left;">Currency</th>
-                    <th>1m</th><th>3m</th><th>5m</th><th>15m</th><th>1h</th><th>4h</th>
-                </tr>
-            </thead>
-            <tbody id="matrix-body"></tbody>
-        </table>
+    <div class="matrix-container" id="matrix-box">
+        <div class="matrix-header">
+            <div class="matrix-title">Multi-Timeframe Currency Matrix</div>
+            <button class="toggle-btn" id="matrix-toggle" onclick="toggleSection('matrix-content', this)">−</button>
+        </div>
+        <div id="matrix-content">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">Currency</th>
+                        <th>1m</th><th>3m</th><th>5m</th><th>15m</th><th>1h</th><th>4h</th>
+                    </tr>
+                </thead>
+                <tbody id="matrix-body"></tbody>
+            </table>
+        </div>
     </div>
-    <h2 style="margin-bottom: 16px; font-size: 1.1rem; color: var(--text-muted);">ACTIVE DISPLACEMENT SIGNALS</h2>
+    <div class="matrix-header">
+        <h2 style="margin-bottom: 16px; font-size: 1.1rem; color: var(--text-muted);">ACTIVE DISPLACEMENT SIGNALS</h2>
+    </div>
     <div class="signals-grid" id="signals-container"></div>
+
     <script>
         const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'];
         const TIMEFRAMES = ['1min', '3min', '5min', '15min', '1h', '4h'];
+
+        function toggleSection(contentId, btn) {
+            const content = document.getElementById(contentId);
+            content.classList.toggle('collapsed');
+            btn.innerText = content.classList.contains('collapsed') ? '+' : '−';
+        }
+
         async function fetchScanData() {
             document.getElementById('system-status').innerText = 'Scanning...';
             try {
@@ -92,25 +118,33 @@ app.get('/', (req, res) => {
                 const data = await res.json();
                 renderUI(data);
                 document.getElementById('system-status').innerText = 'Scan Complete';
-            } catch (err) { document.getElementById('system-status').innerText = 'Error'; }
+            } catch (err) { 
+                document.getElementById('system-status').innerText = 'Error'; 
+            }
         }
+
         async function loadLatestScan() {
             try {
                 const res = await fetch('/latest-scan');
                 const data = await res.json();
                 renderUI(data);
-            } catch (err) { console.error(err); }
+            } catch (err) { 
+                console.error(err); 
+            }
         }
+
         function renderUI(data) {
             const matrixBody = document.getElementById('matrix-body');
             matrixBody.innerHTML = '';
             const signalsContainer = document.getElementById('signals-container');
             signalsContainer.innerHTML = '';
+
             const activeMap = {};
             (data.active_currencies || []).forEach(item => {
                 if (!activeMap[item.currency]) activeMap[item.currency] = {};
                 activeMap[item.currency][item.timeframe] = item;
             });
+
             CURRENCIES.forEach(curr => {
                 const tr = document.createElement('tr');
                 let rowHTML = \`<td class="curr-cell">\${curr}</td>\`;
@@ -126,10 +160,12 @@ app.get('/', (req, res) => {
                 tr.innerHTML = rowHTML;
                 matrixBody.appendChild(tr);
             });
+
             if (!data.active_currencies || data.active_currencies.length === 0) {
                 signalsContainer.innerHTML = \`<div style="color: var(--text-muted); font-size: 0.9rem;">No active institutional displacement detected currently.</div>\`;
                 return;
             }
+
             data.active_currencies.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'card';
@@ -138,6 +174,7 @@ app.get('/', (req, res) => {
                 signalsContainer.appendChild(card);
             });
         }
+
         loadLatestScan();
     </script>
 </body>
@@ -237,4 +274,3 @@ async function executeMarketScan() {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
