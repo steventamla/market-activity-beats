@@ -1,17 +1,12 @@
 const express = require('express');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+const resend = new Resend('re_c7qBvNAT_8C6Zm1Z37xjiRe9RAFw6ezHd');
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: 'tamlaglobal@gmail.com',
-    pass: 'wjxhsxgfggwdwfku'
-  }
-});
+app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send('Trade Beats Scanner is active');
@@ -20,18 +15,19 @@ app.get('/', (req, res) => {
 app.post('/send-alert', async (req, res) => {
   try {
     const { symbol, message } = req.body;
-    const mailOptions = {
-      from: 'tamlaglobal@gmail.com',
+
+    const data = await resend.emails.send({
+      from: 'onboarding@resend.dev',
       to: 'tamlaglobal@gmail.com',
       subject: `Forex Alert: ${symbol || 'Market Update'}`,
       text: message || 'A new market activity trigger was detected.'
-    };
-    await transporter.sendMail(mailOptions);
-    res.status(200).send('Email sent successfully');
-  } catch (error) {
-  console.error('FULL ALERT ERROR:', error);
-  res.status(500).json({ success: false, error: error.message || error.toString() });
+    });
 
+    console.log('Email sent successfully:', data);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('FULL ALERT ERROR:', error);
+    res.status(500).json({ success: false, error: error.message || error.toString() });
   }
 });
 
