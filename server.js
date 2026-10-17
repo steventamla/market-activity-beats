@@ -289,7 +289,7 @@ async function sendPushNotification(signals) {
   const signalSummary = signals.map(s => `${s.currency} (${s.timeframe}): ${s.bias} [${s.cohesion}]`).join('\n');
   
   try {
-    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+    const response = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
       method: 'POST',
       body: `Institutional Displacement Detected:\n\n${signalSummary}`,
       headers: {
@@ -298,6 +298,9 @@ async function sendPushNotification(signals) {
         'Tags': 'chart_with_upwards_trend,warning'
       }
     });
+   if (!response.ok) {
+  throw new Error(`Notification failed: ${response.status}`);
+}
     console.log('Push notification sent successfully.');
   } catch (err) {
     console.error('Failed to send push notification:', err);
