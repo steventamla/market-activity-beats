@@ -4,7 +4,7 @@ const PORT = process.env.PORT || 3000;
 const {
   executeMarketScan,
   getLatestScanData
-} = require('./currency-activity-engine');
+} = require('./currency-activity-engine.js');
 app.use(express.json());
 
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'market-activity-tracker-889';
