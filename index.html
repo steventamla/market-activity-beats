@@ -1,1 +1,261 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Market Activity Monitor</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #101722;
+      color: #e8eef7;
+      font-family: Arial, sans-serif;
+    }
+    main { max-width: 1100px; margin: auto; }
+    h1 { margin-bottom: 6px; font-size: 27px; }
+    .muted { color: #9baabd; font-size: 13px; }
+    .top, .panel {
+      background: #192434;
+      border: 1px solid #2b3a4e;
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    button {
+      background: #2477e8;
+      color: white;
+      border: 0;
+      border-radius: 7px;
+      padding: 12px 17px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: wait; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      background: #192434;
+      border: 1px solid #2b3a4e;
+      border-radius: 10px;
+      padding: 15px;
+    }
+    .stat strong { display: block; font-size: 24px; margin-top: 8px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 620px; }
+    th, td {
+      text-align: left;
+      padding: 13px 10px;
+      border-bottom: 1px solid #2b3a4e;
+      font-size: 13px;
+    }
+    th { color: #9baabd; }
+    .currency { font-weight: bold; font-size: 15px; }
+    .active { color: #50dfa1; font-weight: bold; }
+    .inactive { color: #9baabd; }
+    .up { color: #50dfa1; }
+    .down { color: #ff8585; }
+    .neutral { color: #c5cbd5; }
+    .message { margin-top: 12px; color: #c6d2e2; font-size: 13px; }
+    @media (max-width: 600px) {
+      body { padding: 10px; }
+      h1 { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="top">
+    <div>
+      <h1>Market Activity Monitor</h1>
+      <div class="muted">Currency activity across 15-minute and 1-hour charts</div>
+    </div>
+    <button id="scanButton" onclick="runScan()">Run Scan</button>
+  </section>
+
+  <section class="stats">
+    <div class="stat">
+      <span class="muted">Scanner status</span>
+      <strong id="status">Waiting</strong>
+    </div>
+    <div class="stat">
+      <span class="muted">Active signals</span>
+      <strong id="signals">—</strong>
+    </div>
+    <div class="stat">
+      <span class="muted">Last scan</span>
+      <strong id="scanTime" style="font-size:15px">Not yet scanned</strong>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Currency activity</h2>
+    <div class="muted">Activity is based on the scanner's current rules, not a prediction of future price.</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Currency</th>
+            <th>15-minute</th>
+            <th>1-hour</th>
+          </tr>
+        </thead>
+        <tbody id="currencyRows">
+          <tr><td colspan="3">Loading latest results…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="message" class="message">Connecting to the scanner…</div>
+  </section>
+
+  <section class="panel">
+    <h2>Active signals</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Currency</th>
+            <th>Timeframe</th>
+            <th>Direction</th>
+            <th>Agreeing pairs</th>
+            <th>Last active</th>
+          </tr>
+        </thead>
+        <tbody id="signalRows">
+          <tr><td colspan="5">No results loaded yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <div class="muted">Dashboard refreshes results every 30 seconds. It does not automatically run new market scans.</div>
+</main>
+
+<script>
+  const currencies = ['USD','EUR','GBP','JPY','CHF','AUD','CAD','NZD'];
+
+  function escapeHTML(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+    })[c]);
+  }
+
+  function direction(value) {
+    const v = String(value || '—').toUpperCase();
+    const cls = v.includes('BULL') || v === 'BUY' || v === 'UP'
+      ? 'up'
+      : v.includes('BEAR') || v === 'SELL' || v === 'DOWN'
+        ? 'down' : 'neutral';
+    return `<span class="${cls}">${escapeHTML(v)}</span>`;
+  }
+
+  function timeText(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? escapeHTML(value) : date.toLocaleString();
+  }
+
+  function timeframeCell(item) {
+    if (!item || !item.active) {
+      return '<span class="inactive">Inactive</span>';
+    }
+    return `<span class="active">ACTIVE</span><br>
+      ${direction(item.bias)}<br>
+      <span class="muted">Agreeing pairs: ${escapeHTML(item.agreeing_pairs ?? '—')}</span><br>
+      <span class="muted">Last active: ${timeText(item.last_active_at)}</span>`;
+  }
+
+  function render(data) {
+    if (!data) {
+      document.getElementById('message').textContent = 'No scan results are available yet.';
+      return;
+    }
+
+    document.getElementById('status').textContent =
+      data.scan_status || 'Unknown';
+    document.getElementById('signals').textContent =
+      data.active_signals_count ?? data.active_currencies?.length ?? 0;
+    document.getElementById('scanTime').textContent = timeText(data.scan_timestamp);
+
+    if (data.error) {
+      document.getElementById('message').textContent = 'Scanner error: ' + data.error;
+    } else if (data.scan_status === 'success') {
+      document.getElementById('message').textContent = 'Latest scan results loaded.';
+    } else {
+      document.getElementById('message').textContent =
+        'Waiting for a successful scan. Use Run Scan to request one.';
+    }
+
+    const statusRows = data.currency_status || [];
+    const statusMap = new Map(statusRows.map(row => [row.currency, row]));
+
+    document.getElementById('currencyRows').innerHTML = currencies.map(currency => {
+      const row = statusMap.get(currency);
+      const frames = row?.timeframes || {};
+      return `<tr>
+        <td class="currency">${currency}</td>
+        <td>${timeframeCell(frames['15m'])}</td>
+        <td>${timeframeCell(frames['1h'])}</td>
+      </tr>`;
+    }).join('');
+
+    const active = data.active_currencies || [];
+    document.getElementById('signalRows').innerHTML = active.length
+      ? active.map(item => `<tr>
+          <td class="currency">${escapeHTML(item.currency)}</td>
+          <td>${escapeHTML(item.timeframe)}</td>
+          <td>${direction(item.bias)}</td>
+          <td>${escapeHTML(item.agreeing_pairs ?? '—')}</td>
+          <td>${timeText(item.last_active_at)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="5">No active signals in the latest results.</td></tr>';
+  }
+
+  async function refreshResults() {
+    try {
+      const response = await fetch('/latest-scan', { cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      render(await response.json());
+    } catch (error) {
+      document.getElementById('message').textContent =
+        'Could not load results. Check that the web service is running.';
+    }
+  }
+
+  async function runScan() {
+    const button = document.getElementById('scanButton');
+    button.disabled = true;
+    button.textContent = 'Scanning…';
+    document.getElementById('message').textContent = 'Requesting a market scan…';
+
+    try {
+      const response = await fetch('/scan', { cache: 'no-store' });
+      const data = await response.json();
+      render(data);
+    } catch (error) {
+      document.getElementById('message').textContent =
+        'Scan request failed. Check the Render logs.';
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Run Scan';
+    }
+  }
+
+  refreshResults();
+  setInterval(refreshResults, 30000);
+</script>
+</body>
+</html>
+
