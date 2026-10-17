@@ -71,11 +71,13 @@ app.get('/', (req, res) => {
         <div class="status-badge">
             <div class="indicator"></div>
             <span id="system-status">Operating Normal</span>
+            <span id="last-updated" style="margin-left: 10px; color: var(--text-muted); font-size: 0.8rem;">Updated: --:--:--</span>
         </div>
     </header>
     <div class="controls-bar">
         <button onclick="fetchScanData()">Run Manual Scan</button>
         <button onclick="loadLatestScan()">Fetch Latest Scan</button>
+        <button onclick="triggerTestPush()" style="border-color: var(--accent-green); color: var(--accent-green);">Test Push Alert</button>
     </div>
     <div class="matrix-container" id="matrix-box">
         <div class="matrix-header">
@@ -131,7 +133,28 @@ app.get('/', (req, res) => {
             }
         }
 
+        async function triggerTestPush() {
+            document.getElementById('system-status').innerText = 'Sending Push...';
+            try {
+                await fetch('/test-push');
+                document.getElementById('system-status').innerText = 'Test Push Sent';
+            } catch (err) {
+                document.getElementById('system-status').innerText = 'Push Error';
+            }
+        }
+
+        function updateLastUpdatedTime(timestamp) {
+            const timeEl = document.getElementById('last-updated');
+            if (!timestamp) {
+                timeEl.innerText = 'Updated: Never';
+                return;
+            }
+            const date = new Date(timestamp);
+            timeEl.innerText = \`Updated: \${date.toLocaleTimeString()}\`;
+        }
+
         function renderUI(data) {
+            updateLastUpdatedTime(data.scan_timestamp);
             const matrixBody = document.getElementById('matrix-body');
             matrixBody.innerHTML = '';
             const signalsContainer = document.getElementById('signals-container');
@@ -206,6 +229,16 @@ app.get('/latest-scan', (req, res) => {
 app.get('/scan', async (req, res) => {
   await executeMarketScan();
   res.json(latestScanData);
+});
+
+app.get('/test-push', async (req, res) => {
+  await sendPushNotification([{
+    currency: 'TEST',
+    timeframe: '1m',
+    bias: 'BUY',
+    cohesion: 'Dashboard UI Test Alert'
+  }]);
+  res.json({ status: 'success' });
 });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
