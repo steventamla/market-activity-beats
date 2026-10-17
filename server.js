@@ -1,7 +1,10 @@
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
-
+const {
+  executeMarketScan,
+  getLatestScanData
+} = require('./currency-activity-engine');
 app.use(express.json());
 
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'market-activity-tracker-889';
@@ -260,12 +263,12 @@ let latestScanData = {
 };
 
 app.get('/latest-scan', (req, res) => {
-  res.json(latestScanData);
+  res.json(getLatestScanData());
 });
 
 app.get('/scan', async (req, res) => {
-  await executeMarketScan();
-  res.json(latestScanData);
+  const result = await executeMarketScan();
+  res.json(result);
 });
 
 app.get('/test-push', async (req, res) => {
@@ -301,79 +304,7 @@ async function sendPushNotification(signals) {
   }
 }
 
-async function executeMarketScan() {
-  const apiKey = process.env.TWELVE_DATA_API_KEY;
-  if (!apiKey) return;
 
-  const activeResults = [];
-  try {
-    for (const [currency, pairs] of Object.entries(BASKET_MAP)) {
-      for (const tf of TIMEFRAMES) {
-        const symbolsParam = pairs.join(',');
-        const url = `https://api.twelvedata.com/time_series?symbol=${symbolsParam}&interval=${tf}&outputsize=15&apikey=${apiKey}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        const seriesData = data.status ? { [pairs[0]]: data } : data;
-
-        let bullishVotes = 0;
-        let bearishVotes = 0;
-        let expandingPairsCount = 0;
-
-        pairs.forEach((symbol) => {
-          const pairObj = seriesData[symbol];
-          if (!pairObj || !pairObj.values || pairObj.values.length < 15) return;
-          const candles = pairObj.values;
-          const currentRange = parseFloat(candles[0].high) - parseFloat(candles[0].low);
-          const prior14 = candles.slice(1, 15);
-          const avgRange = prior14.reduce((sum, c) => sum + (parseFloat(c.high) - parseFloat(c.low)), 0) / 14;
-
-          if (currentRange >= (avgRange * 1.8)) {
-            expandingPairsCount++;
-            const isBullish = parseFloat(candles[0].close) >= parseFloat(candles[0].open);
-            const isBase = symbol.startsWith(currency);
-            const bias = isBase ? (isBullish ? 'BUY' : 'SELL') : (isBullish ? 'SELL' : 'BUY');
-            if (bias === 'BUY') bullishVotes++;
-            if (bias === 'SELL') bearishVotes++;
-          }
-        });
-
-        const minRequired = Math.min(5, pairs.length);
-        const dominantVotes = Math.max(bullishVotes, bearishVotes);
-        if (expandingPairsCount >= minRequired && dominantVotes >= minRequired) {
-          activeResults.push({
-            currency,
-            timeframe: tf,
-            bias: bullishVotes > bearishVotes ? 'BUY' : 'SELL',
-            cohesion: `${dominantVotes}/${pairs.length} pairs aligned`,
-            status: 'ACTIVE_DISPLACEMENT'
-          });
-        }
-        await sleep(200);
-      }
-    }
-
-    latestScanData = {
-      scan_timestamp: new Date().toISOString(),
-      active_signals_count: activeResults.length,
-      active_currencies: activeResults
-    };
-
-    if (activeResults.length > 0) {
-      await sendPushNotification(activeResults);
-    }
-
-  } catch (error) {
-    console.error(error);
-  }
-}
-
-setInterval(async () => {
-  const currentHour = new Date().getHours();
-  if (currentHour >= 6 && currentHour <= 23) {
-    console.log('Running scheduled market scan...');
-    await executeMarketScan();
-  }
-}, 60 * 60 * 1000);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
