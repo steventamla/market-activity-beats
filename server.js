@@ -6,6 +6,35 @@ app.use(express.json());
 
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'market-activity-tracker-889';
 
+// PWA Manifest Route
+app.get('/manifest.json', (req, res) => {
+  res.json({
+    name: "Market Institutions Tracker",
+    short_name: "MarketTracker",
+    start_url: "/",
+    display: "standalone",
+    background_color: "#0a0d14",
+    theme_color: "#0a0d14",
+    icons: [
+      {
+        src: "https://ntfy.sh/static/img/icon_96x96.png",
+        sizes: "96x96",
+        type: "image/png"
+      }
+    ]
+  });
+});
+
+// PWA Service Worker Route
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(`
+    self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
+    self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+    self.addEventListener('fetch', e => e.respondWith(fetch(e.request).catch(() => caches.match(e.request))));
+  `);
+});
+
 // Serve the Dashboard directly
 app.get('/', (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -14,6 +43,8 @@ app.get('/', (req, res) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Market Institutions Tracker</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0a0d14">
     <style>
         :root {
             --bg-primary: #0a0d14;
@@ -38,7 +69,7 @@ app.get('/', (req, res) => {
         .title-block p { color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; }
         .status-badge { display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; }
         .indicator { width: 10px; height: 10px; border-radius: 50%; background-color: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
-        .controls-bar { display: flex; gap: 12px; margin-bottom: 24px; }
+        .controls-bar { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
         button { background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
         button:hover { background: #1f2d42; }
         .matrix-container { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; margin-bottom: 32px; }
@@ -102,6 +133,12 @@ app.get('/', (req, res) => {
     <div class="signals-grid" id="signals-container"></div>
 
     <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(() => console.log('PWA Service Worker Registered'))
+                .catch(err => console.log('SW registration failed: ', err));
+        }
+
         const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'];
         const TIMEFRAMES = ['1min', '3min', '5min', '15min', '1h', '4h'];
 
