@@ -4,6 +4,8 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+const NTFY_TOPIC = process.env.NTFY_TOPIC || 'market-activity-tracker-889';
+
 // Serve the Dashboard directly
 app.get('/', (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -11,7 +13,7 @@ app.get('/', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Institutional Market Activity Scanner</title>
+    <title>Market Institutions Tracker</title>
     <style>
         :root {
             --bg-primary: #0a0d14;
@@ -20,7 +22,6 @@ app.get('/', (req, res) => {
             --text-main: #f0f4f8;
             --text-muted: #8a99ad;
             
-            /* --- COLOR THEMING OPTIONS --- */
             --accent-green: #00e676; 
             --accent-green-bg: rgba(0, 230, 118, 0.15);
             
@@ -64,7 +65,7 @@ app.get('/', (req, res) => {
 <body>
     <header>
         <div class="title-block">
-            <h1>Market Activity Scanner</h1>
+            <h1>Market Institutions Tracker</h1>
             <p>Institutional Currency Displacement Matrix</p>
         </div>
         <div class="status-badge">
@@ -173,6 +174,7 @@ app.get('/', (req, res) => {
         }
 
         loadLatestScan();
+        setInterval(loadLatestScan, 120000);
     </script>
 </body>
 </html>`);
@@ -207,6 +209,27 @@ app.get('/scan', async (req, res) => {
 });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function sendPushNotification(signals) {
+  if (!signals || signals.length === 0) return;
+
+  const signalSummary = signals.map(s => `${s.currency} (${s.timeframe}): ${s.bias} [${s.cohesion}]`).join('\n');
+  
+  try {
+    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+      method: 'POST',
+      body: `Institutional Displacement Detected:\n\n${signalSummary}`,
+      headers: {
+        'Title': `Market Tracker Alert (${signals.length} Active)`,
+        'Priority': 'high',
+        'Tags': 'chart_with_upwards_trend,warning'
+      }
+    });
+    console.log('Push notification sent successfully.');
+  } catch (err) {
+    console.error('Failed to send push notification:', err);
+  }
+}
 
 async function executeMarketScan() {
   const apiKey = process.env.TWELVE_DATA_API_KEY;
@@ -258,17 +281,22 @@ async function executeMarketScan() {
         await sleep(200);
       }
     }
+
     latestScanData = {
       scan_timestamp: new Date().toISOString(),
       active_signals_count: activeResults.length,
       active_currencies: activeResults
     };
+
+    if (activeResults.length > 0) {
+      await sendPushNotification(activeResults);
+    }
+
   } catch (error) {
     console.error(error);
   }
 }
 
-// Automated scheduler: run every hour between 6 AM and 11 PM
 setInterval(async () => {
   const currentHour = new Date().getHours();
   if (currentHour >= 6 && currentHour <= 23) {
