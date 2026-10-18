@@ -314,7 +314,18 @@ async function executeMarketScan() {
   if (scanInProgress) {
     return { ...latestScanData, scan_status: 'scanning' };
   }
-
+    const day = new Date().getUTCDay();
+    if (day === 0 || day === 6) {
+      return {
+        ...latestScanData,
+        scan_timestamp: new Date().toISOString(),
+        scan_status: 'success',
+        error: null,
+        active_signals_count: 0,
+        active_currencies: [],
+        message: 'Forex market closed for the weekend.'
+      };
+    }
   const apiKey = process.env.TWELVE_DATA_API_KEY;
 
   if (!apiKey) {
