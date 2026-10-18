@@ -153,13 +153,21 @@ async function scheduledScan() {
   if (scheduledScanRunning) return;
 
   scheduledScanRunning = true;
+  console.log(`[SCHEDULE] Scan started at ${new Date().toISOString()}`);
 
   try {
-    await runScanAndNotify();
+    const result = await runScanAndNotify();
+
+    console.log(
+      `[SCHEDULE] Scan finished at ${new Date().toISOString()} | ` +
+      `status=${result.scan_status} | ` +
+      `active_signals=${result.active_signals_count ?? 0}`
+    );
   } catch (error) {
-    console.error('Scheduled scan error:', error);
+    console.error('[SCHEDULE] Scan error:', error);
   } finally {
     scheduledScanRunning = false;
+    console.log('[SCHEDULE] Next scan scheduled in 60 minutes.');
     setTimeout(scheduledScan, HOUR_MS);
   }
 }
