@@ -3,76 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#101722">
   <title>Market Activity Monitor</title>
   <style>
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 20px;
-      background: #101722;
-      color: #e8eef7;
-      font-family: Arial, sans-serif;
-    }
+    body { margin: 0; padding: 20px; background: #101722; color: #e8eef7; font-family: Arial, sans-serif; }
     main { max-width: 1100px; margin: auto; }
-    h1 { margin-bottom: 6px; font-size: 27px; }
+    h1 { margin: 0 0 6px; font-size: 27px; }
+    h2 { margin: 0 0 14px; font-size: 19px; }
     .muted { color: #9baabd; font-size: 13px; }
-    .top, .panel {
-      background: #192434;
-      border: 1px solid #2b3a4e;
-      border-radius: 12px;
-      padding: 18px;
-      margin-bottom: 16px;
-    }
-    .top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 14px;
-      flex-wrap: wrap;
-    }
-    button {
-      background: #2477e8;
-      color: white;
-      border: 0;
-      border-radius: 7px;
-      padding: 12px 17px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    button:disabled { opacity: .55; cursor: wait; }
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    .stat {
-      background: #192434;
-      border: 1px solid #2b3a4e;
-      border-radius: 10px;
-      padding: 15px;
-    }
-    .stat strong { display: block; font-size: 24px; margin-top: 8px; }
+    .top, .panel, .stat { background: #192434; border: 1px solid #2b3a4e; border-radius: 12px; }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; padding: 18px; margin-bottom: 16px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .stat { padding: 15px; }
+    .stat strong { display: block; font-size: 24px; margin-top: 8px; overflow-wrap: anywhere; }
+    .panel { padding: 18px; margin-bottom: 16px; }
     .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 620px; }
-    th, td {
-      text-align: left;
-      padding: 13px 10px;
-      border-bottom: 1px solid #2b3a4e;
-      font-size: 13px;
-    }
-    th { color: #9baabd; }
+    table { width: 100%; border-collapse: collapse; min-width: 540px; }
+    th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid #2b3a4e; font-size: 13px; }
+    th { color: #9baabd; font-weight: 600; }
     .currency { font-weight: bold; font-size: 15px; }
     .active { color: #50dfa1; font-weight: bold; }
     .inactive { color: #9baabd; }
-    .up { color: #50dfa1; }
-    .down { color: #ff8585; }
-    .neutral { color: #c5cbd5; }
-    .message { margin-top: 12px; color: #c6d2e2; font-size: 13px; }
-    @media (max-width: 600px) {
-      body { padding: 10px; }
-      h1 { font-size: 22px; }
-    }
+    .message { margin-top: 12px; color: #c6d2e2; font-size: 13px; overflow-wrap: anywhere; }
+    .pill { display: inline-block; border: 1px solid #2b3a4e; border-radius: 20px; padding: 4px 8px; color: #c6d2e2; font-size: 12px; }
+    @media (max-width: 600px) { body { padding: 10px; } h1 { font-size: 22px; } .top, .panel { padding: 14px; } }
   </style>
 </head>
 <body>
@@ -80,201 +35,127 @@
   <section class="top">
     <div>
       <h1>Market Activity Monitor</h1>
-      <div class="muted">Currency activity across 15-minute and 1-hour charts</div>
+      <div class="muted">Currency activity across 5-minute, 15-minute, 1-hour and 4-hour timeframes</div>
     </div>
-    <button id="scanButton">Run Scan</button>
+    <span class="pill">Hourly scan schedule</span>
   </section>
 
   <section class="stats">
-    <div class="stat">
-      <span class="muted">Scanner status</span>
-      <strong id="status">Waiting</strong>
-    </div>
-    <div class="stat">
-      <span class="muted">Active signals</span>
-      <strong id="signals">—</strong>
-    </div>
-    <div class="stat">
-      <span class="muted">Last scan</span>
-      <strong id="scanTime" style="font-size:15px">Not yet scanned</strong>
-    </div>
+    <div class="stat"><span class="muted">Scanner status</span><strong id="status">Waiting</strong></div>
+    <div class="stat"><span class="muted">Active signals</span><strong id="signals">—</strong></div>
+    <div class="stat"><span class="muted">Last scan</span><strong id="scanTime" style="font-size:15px">Not yet scanned</strong></div>
+    <div class="stat"><span class="muted">Timeframes analysed</span><strong style="font-size:16px">5m · 15m · 1h · 4h</strong></div>
   </section>
 
   <section class="panel">
     <h2>Currency activity</h2>
-    <div class="muted">Activity is based on the scanner's current rules, not a prediction of future price.</div>
+    <div class="muted">Shows whether each currency is currently active on each timeframe. This monitor reports activity, not direction or trading advice.</div>
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>Currency</th>
-            <th>15-minute</th>
-            <th>1-hour</th>
-          </tr>
-        </thead>
-        <tbody id="currencyRows">
-          <tr><td colspan="3">Loading latest results…</td></tr>
-        </tbody>
+        <thead><tr><th>Currency</th><th>5 minutes</th><th>15 minutes</th><th>1 hour</th><th>4 hours</th></tr></thead>
+        <tbody id="currencyRows"><tr><td colspan="5">Loading latest results…</td></tr></tbody>
       </table>
     </div>
     <div id="message" class="message">Connecting to the scanner…</div>
   </section>
 
   <section class="panel">
-    <h2>Active signals</h2>
+    <h2>Currently active</h2>
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>Currency</th>
-            <th>Timeframe</th>
-            <th>Direction</th>
-            <th>Agreeing pairs</th>
-            <th>Last active</th>
-          </tr>
-        </thead>
-        <tbody id="signalRows">
-          <tr><td colspan="5">No results loaded yet.</td></tr>
-        </tbody>
+        <thead><tr><th>Currency</th><th>Timeframe</th><th>Last active</th></tr></thead>
+        <tbody id="signalRows"><tr><td colspan="3">No results loaded yet.</td></tr></tbody>
       </table>
     </div>
   </section>
-  <div class="muted">Dashboard refreshes results every 30 seconds. It does not automatically run new market scans.</div>
-</main>
 
+  <section class="panel">
+    <h2>Recent activity history</h2>
+    <div class="muted">Recent events recorded by this running server. The current history is in memory and may reset when Render restarts; persistent storage is a separate follow-up task.</div>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Currency</th><th>Timeframe</th><th>Last active</th><th>Recorded</th></tr></thead>
+        <tbody id="historyRows"><tr><td colspan="4">Loading history…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+  <div class="muted">Dashboard refreshes saved results every 30 seconds. Refreshing this page does not start a new market scan or use API credits.</div>
+</main>
 <script>
   const currencies = ['USD','EUR','GBP','JPY','CHF','AUD','CAD','NZD'];
+  const timeframeOrder = ['5m','15m','1h','4h'];
+  const timeframeNames = { '5m': '5 minutes', '15m': '15 minutes', '1h': '1 hour', '4h': '4 hours' };
 
   function escapeHTML(value) {
-    return String(value ?? '').replace(/[&<>"']/g, c => ({
-      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
-    })[c]);
+    return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
   }
-
   function timeAgo(value) {
     if (!value) return 'Unknown';
-
     const timestamp = new Date(value).getTime();
-    if (Number.isNaN(timestamp)) return 'Unknown';
-
-    const minutes = Math.max(
-      0,
-      Math.floor((Date.now() - timestamp) / 60000)
-    );
-
+    if (!Number.isFinite(timestamp)) return 'Unknown';
+    const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
     if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes} minute(s) ago`;
-
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} hour(s) ago`;
-
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
     const days = Math.floor(hours / 24);
-    return `${days} day(s) ago`;
+    return `${days} day${days === 1 ? '' : 's'} ago`;
   }
-
-  function direction(value) {
-    const v = String(value || '—').toUpperCase();
-    const cls = v.includes('BULL') || v === 'BUY' || v === 'UP'
-      ? 'up'
-      : v.includes('BEAR') || v === 'SELL' || v === 'DOWN'
-        ? 'down' : 'neutral';
-    return `<span class="${cls}">${escapeHTML(v)}</span>`;
-  }
-
   function timeText(value) {
     if (!value) return '—';
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? escapeHTML(value) : date.toLocaleString();
+    return Number.isNaN(date.getTime()) ? escapeHTML(value) : escapeHTML(date.toLocaleString());
   }
-
   function timeframeCell(item) {
-    if (!item || !item.active) {
-      return '<span class="inactive">Inactive</span>';
-    }
-    return `<span class="active">ACTIVE</span><br>
-      ${direction(item.bias)}<br>
-      <span class="muted">Last active: ${timeAgo(item.last_active_at)}</span>`;
+    if (!item || !item.active) return '<span class="inactive">Inactive</span>';
+    return `<span class="active">ACTIVE</span><br><span class="muted">Last active: ${escapeHTML(timeAgo(item.last_active_at))}</span>`;
   }
-
   function render(data) {
-    if (!data) {
-      document.getElementById('message').textContent = 'No scan results are available yet.';
-      return;
-    }
-
-    document.getElementById('status').textContent =
-      data.scan_status || 'Unknown';
-    document.getElementById('signals').textContent =
-      data.active_signals_count ?? data.active_currencies?.length ?? 0;
+    if (!data) return;
+    document.getElementById('status').textContent = data.scan_status || 'Unknown';
+    document.getElementById('signals').textContent = data.active_signals_count ?? data.active_currencies?.length ?? 0;
     document.getElementById('scanTime').textContent = timeText(data.scan_timestamp);
+    if (data.error) document.getElementById('message').textContent = 'Scanner error: ' + data.error;
+    else if (data.scan_status === 'success') document.getElementById('message').textContent = 'Latest successful scan loaded. The dashboard does not trigger scans.';
+    else document.getElementById('message').textContent = 'Waiting for a successful scheduled scan.';
 
-    if (data.error) {
-      document.getElementById('message').textContent = 'Scanner error: ' + data.error;
-    } else if (data.scan_status === 'success') {
-      document.getElementById('message').textContent = 'Latest scan results loaded.';
-    } else {
-      document.getElementById('message').textContent =
-        'Waiting for a successful scan. Use Run Scan to request one.';
-    }
-
-    const statusRows = data.currency_status || [];
-    const statusMap = new Map(statusRows.map(row => [row.currency, row]));
-
+    const statusMap = new Map((data.currency_status || []).map(row => [row.currency, row]));
     document.getElementById('currencyRows').innerHTML = currencies.map(currency => {
-      const row = statusMap.get(currency);
-      const frames = row?.timeframes || {};
-      return `<tr>
-        <td class="currency">${escapeHTML(currency)}</td>
-        <td>${timeframeCell(frames['15m'])}</td>
-        <td>${timeframeCell(frames['1h'])}</td>
-      </tr>`;
+      const frames = statusMap.get(currency)?.timeframes || {};
+      return `<tr><td class="currency">${currency}</td>${timeframeOrder.map(tf => `<td>${timeframeCell(frames[tf])}</td>`).join('')}</tr>`;
     }).join('');
 
     const active = data.active_currencies || [];
-    document.getElementById('signalRows').innerHTML = active.length
-      ? active.map(item => `<tr>
-          <td class="currency">${escapeHTML(item.currency)}</td>
-          <td>${escapeHTML(item.timeframe)}</td>
-          <td>${direction(item.bias)}</td>
-          <td>${escapeHTML(item.agreeing_pairs ?? '—')}</td>
-          <td>${timeText(item.last_active_at)}</td>
-        </tr>`).join('')
-      : '<tr><td colspan="5">No active signals in the latest results.</td></tr>';
+    document.getElementById('signalRows').innerHTML = active.length ? active.map(item =>
+      `<tr><td class="currency">${escapeHTML(item.currency)}</td><td>${escapeHTML(timeframeNames[item.timeframe] || item.timeframe)}</td><td>${escapeHTML(timeAgo(item.last_active_at))}</td></tr>`
+    ).join('') : '<tr><td colspan="3">No active signals in the latest scan.</td></tr>';
   }
-
   async function refreshResults() {
     try {
       const response = await fetch('/latest-scan?t=' + Date.now(), { cache: 'no-store' });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       render(await response.json());
     } catch (error) {
-      document.getElementById('message').textContent =
-        'Could not load results. Check that the web service is running.';
+      document.getElementById('message').textContent = 'Could not load results. Check that the web service is running.';
     }
   }
-
-  async function runScan() {
-    const button = document.getElementById('scanButton');
-    button.disabled = true;
-    button.textContent = 'Scanning…';
-    document.getElementById('message').textContent = 'Requesting a market scan…';
-
+  async function refreshHistory() {
     try {
-      const response = await fetch('/scan', { cache: 'no-store' });
+      const response = await fetch('/activity-history?t=' + Date.now(), { cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
       const data = await response.json();
-      render(data);
+      const items = data.items || [];
+      document.getElementById('historyRows').innerHTML = items.length ? items.slice(0, 50).map(item =>
+        `<tr><td class="currency">${escapeHTML(item.currency)}</td><td>${escapeHTML(timeframeNames[item.timeframe] || item.timeframe)}</td><td>${escapeHTML(timeAgo(item.last_active_at))}</td><td>${escapeHTML(timeText(item.detected_at))}</td></tr>`
+      ).join('') : '<tr><td colspan="4">No activity events recorded in this server session yet.</td></tr>';
     } catch (error) {
-      document.getElementById('message').textContent =
-        'Scan request failed. Check the Render logs.';
-    } finally {
-      button.disabled = false;
-      button.textContent = 'Run Scan';
+      document.getElementById('historyRows').innerHTML = '<tr><td colspan="4">Activity history is unavailable.</td></tr>';
     }
   }
-
-  document.getElementById('scanButton').addEventListener('click', runScan);
   refreshResults();
+  refreshHistory();
   setInterval(refreshResults, 30000);
+  setInterval(refreshHistory, 30000);
 </script>
 </body>
 </html>
