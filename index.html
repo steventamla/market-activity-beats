@@ -224,9 +224,9 @@ function timeAgo(value) {
       const row = statusMap.get(currency);
       const frames = row?.timeframes || {};
 return `<tr>
-  <td class="currency">${escapeHTML(currency)}</td>
-  <td>${timeframeCell(frames['15m'])}</td>
-  <td>${timeframeCell(frames['1h'])}</td>
+    <td class="currency">${escapeHTML(currency)}</td>
+    <td>${timeframeCell(frames['15m'])}</td>
+    <td>${timeframeCell(frames['1h'])}</td>
 </tr>`;
    
     }).join('');
