@@ -1,4 +1,4 @@
-onst CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'];
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'];
 
 // All four analysis timeframes are derived from one 5-minute data request.
 const TIMEFRAMES = [
