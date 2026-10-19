@@ -83,7 +83,7 @@
       <h1>Market Activity Monitor</h1>
       <div class="muted">Currency activity across 15-minute and 1-hour charts</div>
     </div>
-    <button id="scanButton" onclick="runScan()">Run Scan</button>
+    <button id="scanButton">Run Scan</button>
   </section>
 
   <section class="stats">
@@ -272,7 +272,7 @@ return `<tr>
       button.textContent = 'Run Scan';
     }
   }
-
+document.getElementById('scanButton').addEventListener('click', runScan);
   refreshResults();
   setInterval(refreshResults, 30000);
 </script>
