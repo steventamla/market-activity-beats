@@ -20,11 +20,10 @@ const PAIRS = [
   'CAD/CHF', 'CAD/JPY', 'CHF/JPY'
 ];
 
-// Detection settings retained from the existing engine.
+// Activity is detected from candle-range expansion relative to the prior baseline.
 const RANGE_MULTIPLIER = 1.5;
 const BASELINE_CANDLES = 14;
 const MIN_EXPANSION_PAIRS = 3;
-const MIN_DIRECTION_SHARE = 0.60;
 const BATCH_SIZE = 7;
 const BATCH_DELAY_MS = 61000;
 // 1,200 five-minute candles provides enough history for the 4-hour baseline.
@@ -35,8 +34,7 @@ let scanInProgress = false;
 const lastActiveMemory = {};
 
 function emptyTimeframe() {
-  return { active: false, bias: null, last_active_at: null, agreeing_pairs: 0,
-    expanding_pairs: 0, direction_share: 0, pairs: [] };
+  return { active: false, last_active_at: null, expanding_pairs: 0, pairs: [] };
 }
 
 function emptyCurrencyStatus() {
@@ -68,13 +66,6 @@ function candleRange(candle) {
   const low = toNumber(candle?.low);
   if (high === null || low === null || high < low) return null;
   return high - low;
-}
-
-function candleDirection(candle) {
-  const open = toNumber(candle?.open);
-  const close = toNumber(candle?.close);
-  if (open === null || close === null || open === close) return 0;
-  return close > open ? 1 : -1;
 }
 
 function candleTime(candle) {
@@ -163,52 +154,64 @@ function aggregateCandles(fiveMinuteCandles, timeframe) {
 
 function inspectCandles(symbol, candles, timeframeMs) {
   if (!Array.isArray(candles) || candles.length < BASELINE_CANDLES + 1) return null;
+
   const current = candles[0];
   const baseline = candles.slice(1, BASELINE_CANDLES + 1);
   const currentRange = candleRange(current);
   const baselineRanges = baseline.map(candleRange);
+
   if (currentRange === null || baselineRanges.some(range => range === null)) return null;
-  const averageRange = baselineRanges.reduce((sum, range) => sum + range, 0) / baselineRanges.length;
+
+  const averageRange =
+    baselineRanges.reduce((sum, range) => sum + range, 0) / baselineRanges.length;
+
   if (averageRange <= 0 || currentRange < averageRange * RANGE_MULTIPLIER) return null;
-  const direction = candleDirection(current);
-  if (direction === 0) return null;
+
   const [base, quote] = symbol.split('/');
   const candleOpenTime = candleTime(current);
+
   return {
     symbol,
-    datetime: Number.isFinite(candleOpenTime) ? new Date(candleOpenTime + timeframeMs).toISOString() : null,
+    datetime: Number.isFinite(candleOpenTime)
+      ? new Date(candleOpenTime + timeframeMs).toISOString()
+      : null,
     base,
     quote,
-    baseDirection: direction,
-    quoteDirection: -direction,
     rangeRatio: Number((currentRange / averageRange).toFixed(2))
   };
 }
 
 function scoreCurrency(currency, signals, timeframeLabel) {
-  const votes = [];
-  for (const signal of signals) {
-    if (signal.base === currency) votes.push({ direction: signal.baseDirection, symbol: signal.symbol, ratio: signal.rangeRatio, datetime: signal.datetime });
-    if (signal.quote === currency) votes.push({ direction: signal.quoteDirection, symbol: signal.symbol, ratio: signal.rangeRatio, datetime: signal.datetime });
-  }
-  const bullish = votes.filter(vote => vote.direction === 1);
-  const bearish = votes.filter(vote => vote.direction === -1);
-  const direction = bullish.length > bearish.length ? 1 : bearish.length > bullish.length ? -1 : 0;
-  const dominant = direction === 1 ? bullish : direction === -1 ? bearish : [];
-  const directionShare = votes.length ? dominant.length / votes.length : 0;
-  const active = dominant.length >= MIN_EXPANSION_PAIRS && directionShare >= MIN_DIRECTION_SHARE;
+  // Count pronounced range expansions across pairs involving this currency.
+  // Pair direction is intentionally ignored: this monitor detects activity only.
+  const matchingPairs = signals.filter(
+    signal => signal.base === currency || signal.quote === currency
+  );
+
+  const active = matchingPairs.length >= MIN_EXPANSION_PAIRS;
   const key = `${currency}|${timeframeLabel}`;
-  const currentActiveAt = active ? dominant.map(vote => vote.datetime).filter(Boolean).sort().at(-1) || null : null;
+
+  const currentActiveAt = active
+    ? matchingPairs
+        .map(signal => signal.datetime)
+        .filter(Boolean)
+        .sort()
+        .at(-1) || null
+    : null;
+
   if (currentActiveAt) lastActiveMemory[key] = currentActiveAt;
+
   return {
     active,
-    // Bias is retained internally for the existing detector; the UI and alerts do not display it.
-    bias: active ? (direction === 1 ? 'BUY' : 'SELL') : null,
     last_active_at: currentActiveAt || lastActiveMemory[key] || null,
-    agreeing_pairs: dominant.length,
-    expanding_pairs: votes.length,
-    direction_share: Number(directionShare.toFixed(2)),
-    pairs: active ? dominant.map(vote => ({ symbol: vote.symbol, range_ratio: vote.ratio, candle_time: vote.datetime })) : []
+    expanding_pairs: matchingPairs.length,
+    pairs: active
+      ? matchingPairs.map(signal => ({
+          symbol: signal.symbol,
+          range_ratio: signal.rangeRatio,
+          candle_time: signal.datetime
+        }))
+      : []
   };
 }
 
@@ -266,11 +269,9 @@ async function executeMarketScan() {
         activeCurrencies.push({
           currency: row.currency,
           timeframe: timeframe.label,
-          bias: result.bias,
           status: 'ACTIVE',
           last_active_at: result.last_active_at,
-          direction_share: result.direction_share,
-          agreeing_pairs: result.agreeing_pairs,
+          expanding_pairs: result.expanding_pairs,
           pairs: result.pairs
         });
       }
