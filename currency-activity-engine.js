@@ -292,4 +292,10 @@ async function executeMarketScan() {
   return latestScanData;
 }
 
-module.exports = { CURRENCIES, PAIRS, TIMEFRAMES, executeMarketScan, getLatestScanData: 
+module.exports = {
+  CURRENCIES,
+  PAIRS,
+  TIMEFRAMES,
+  executeMarketScan,
+  getLatestScanData: () => latestScanData
+};
