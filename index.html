@@ -244,7 +244,7 @@ function timeAgo(value) {
 
   async function refreshResults() {
     try {
-      const response = await fetch('/latest-scan', { cache: 'no-store' });
+     const response = await fetch('/latest-scan?t=' + Date.now(), { cache: 'no-store' });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       render(await response.json());
     } catch (error) {
