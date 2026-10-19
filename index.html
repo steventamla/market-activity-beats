@@ -152,6 +152,26 @@
     })[c]);
   }
 
+function timeAgo(value) {
+  if (!value) return 'Unknown';
+
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return 'Unknown';
+
+  const minutes = Math.max(
+    0,
+    Math.floor((Date.now() - timestamp) / 60000)
+  );
+
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} minute(s) ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour(s) ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days} day(s) ago`;
+}
   function direction(value) {
     const v = String(value || '—').toUpperCase();
     const cls = v.includes('BULL') || v === 'BUY' || v === 'UP'
@@ -173,8 +193,7 @@
     }
     return `<span class="active">ACTIVE</span><br>
       ${direction(item.bias)}<br>
-      <span class="muted">Agreeing pairs: ${escapeHTML(item.agreeing_pairs ?? '—')}</span><br>
-      <span class="muted">Last active: ${timeText(item.last_active_at)}</span>`;
+     <span class="muted">Last active: ${timeAgo(item.last_active_at)}</span>
   }
 
   function render(data) {
