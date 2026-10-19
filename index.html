@@ -223,11 +223,12 @@ function timeAgo(value) {
     document.getElementById('currencyRows').innerHTML = currencies.map(currency => {
       const row = statusMap.get(currency);
       const frames = row?.timeframes || {};
-      return `<tr>
-        <td class="currency">${currency}</td>
-        <td>${timeframeCell(frames['15m'])}</td>
-        <td>${timeframeCell(frames['1h'])}</td>
-      </tr>`;
+ return `<tr>
+  <td class="currency">${escapeHTML(currency)}</td>
+  <td>${timeframeCell(frames['15m'])}</td>
+  <td>${timeframeCell(frames['1h'])}</td>
+</tr>`;
+   
     }).join('');
 
     const active = data.active_currencies || [];
