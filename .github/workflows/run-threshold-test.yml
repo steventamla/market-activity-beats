@@ -1,16 +1,7 @@
 name: Historical Threshold Test
 
-on:
+on: 
   workflow_dispatch:
-    inputs:
-      days:
-        description: "Number of historical days to request"
-        required: true
-        default: "5"
-      pairs:
-        description: "Number of pairs to test (start with 4)"
-        required: true
-        default: "4"
 
 permissions:
   contents: read
@@ -29,12 +20,12 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Check test script syntax
+      - name: Check script syntax
         run: node --check historical-threshold-test.js
 
-      - name: Run historical threshold comparison
+      - name: Run historical test
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
-          TEST_DAYS: ${{ inputs.days }}
-          MAX_PAIRS: ${{ inputs.pairs }}
+          TEST_DAYS: "5"
+          MAX_PAIRS: "4"
         run: node historical-threshold-test.js
