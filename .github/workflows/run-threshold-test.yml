@@ -1,27 +1,32 @@
-name: Historical Threshold Test
 
-'on':
+name: Historical ATR Threshold Test
+
+on:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  threshold-test:
+  atr-threshold-test:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 90
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Check JavaScript syntax
-        run: node --check historical-threshold-test.js
+      - name: Check ATR test syntax
+        run: node --check historical-atr-threshold-test.js
 
-      - name: Run historical test
+      - name: Run historical ATR threshold test
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           TEST_DAYS: "5"
-          MAX_PAIRS: "4"
-        run: node historical-threshold-test.js
+          MAX_PAIRS: "28"
+        run: node historical-atr-threshold-test.js
