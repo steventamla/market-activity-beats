@@ -37,19 +37,17 @@
       <h1>Market Activity Monitor</h1>
       <div class="muted">Currency activity across 5-minute, 15-minute, 1-hour and 4-hour timeframes</div>
     </div>
-    <span class="pill">Hourly scan schedule</span>
+    <span class="pill">5-minute scan cycle</span>
   </section>
-
   <section class="stats">
     <div class="stat"><span class="muted">Scanner status</span><strong id="status">Waiting</strong></div>
     <div class="stat"><span class="muted">Active signals</span><strong id="signals">—</strong></div>
     <div class="stat"><span class="muted">Last scan</span><strong id="scanTime" style="font-size:15px">Not yet scanned</strong></div>
     <div class="stat"><span class="muted">Timeframes analysed</span><strong style="font-size:16px">5m · 15m · 1h · 4h</strong></div>
   </section>
-
   <section class="panel">
     <h2>Currency activity</h2>
-    <div class="muted">Shows whether each currency is currently active on each timeframe. This monitor reports activity, not direction or trading advice.</div>
+    <div class="muted">Shows active currencies and the breadth of pair activity on each timeframe. ★ = 1–2 affected pairs, ★★ = 3–5, ★★★ = 6–7. Activity only: no direction, rankings or trade decisions.</div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Currency</th><th>5 minutes</th><th>15 minutes</th><th>1 hour</th><th>4 hours</th></tr></thead>
@@ -58,34 +56,31 @@
     </div>
     <div id="message" class="message">Connecting to the scanner…</div>
   </section>
-
   <section class="panel">
     <h2>Currently active</h2>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Currency</th><th>Timeframe</th><th>Last active</th></tr></thead>
+        <thead><tr><th>Currency</th><th>Timeframe</th><th>Impact</th><th>Pairs affected</th><th>Last active</th></tr></thead>
         <tbody id="signalRows"><tr><td colspan="3">No results loaded yet.</td></tr></tbody>
       </table>
     </div>
   </section>
-
   <section class="panel">
     <h2>Recent activity history</h2>
-    <div class="muted">Recent events recorded by this running server. The current history is in memory and may reset when Render restarts; persistent storage is a separate follow-up task.</div>
+    <div class="muted">Scan-triggered events from this server session. History is in memory and may reset when Render restarts; persistent storage is not included.</div>
     <div class="table-wrap" style="margin-top:10px">
       <table>
-        <thead><tr><th>Currency</th><th>Timeframe</th><th>Last active</th><th>Recorded</th></tr></thead>
+        <thead><tr><th>Currency</th><th>Timeframe</th><th>Impact</th><th>Last active</th><th>Recorded</th></tr></thead>
         <tbody id="historyRows"><tr><td colspan="4">Loading history…</td></tr></tbody>
       </table>
     </div>
   </section>
-  <div class="muted">Dashboard refreshes saved results every 30 seconds. Refreshing this page does not start a new market scan or use API credits.</div>
+  <div class="muted">Dashboard refreshes saved results every 30 seconds. The scanner waits 5 minutes after each completed scan before starting the next one; a scan itself can take several minutes. Each scan requests data for 28 pairs; API usage depends on your Twelve Data plan. Refreshing this page does not start a scan.</div>
 </main>
 <script>
   const currencies = ['USD','EUR','GBP','JPY','CHF','AUD','CAD','NZD'];
   const timeframeOrder = ['5m','15m','1h','4h'];
   const timeframeNames = { '5m': '5 minutes', '15m': '15 minutes', '1h': '1 hour', '4h': '4 hours' };
-
   function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
   }
@@ -108,7 +103,8 @@
   }
   function timeframeCell(item) {
     if (!item || !item.active) return '<span class="inactive">Inactive</span>';
-    return `<span class="active">ACTIVE</span><br><span class="muted">Last active: ${escapeHTML(timeAgo(item.last_active_at))}</span>`;
+    const stars = '★'.repeat(item.impact_stars || 1);
+    return `<span class="active">ACTIVE ${stars}</span><br><span class="muted">${escapeHTML(item.expanding_pairs ?? 0)} pairs affected · Last active: ${escapeHTML(timeAgo(item.last_active_at))}</span>`;
   }
   function render(data) {
     if (!data) return;
@@ -116,19 +112,18 @@
     document.getElementById('signals').textContent = data.active_signals_count ?? data.active_currencies?.length ?? 0;
     document.getElementById('scanTime').textContent = timeText(data.scan_timestamp);
     if (data.error) document.getElementById('message').textContent = 'Scanner error: ' + data.error;
-    else if (data.scan_status === 'success') document.getElementById('message').textContent = 'Latest successful scan loaded. The dashboard does not trigger scans.';
+    else if (data.scan_status === 'success') document.getElementById('message').textContent = data.message || 'Latest successful scan loaded. The dashboard does not trigger scans.';
+    else if (data.scan_status === 'scanning') document.getElementById('message').textContent = 'Scan in progress. The dashboard does not start additional scans.';
     else document.getElementById('message').textContent = 'Waiting for a successful scheduled scan.';
-
     const statusMap = new Map((data.currency_status || []).map(row => [row.currency, row]));
     document.getElementById('currencyRows').innerHTML = currencies.map(currency => {
       const frames = statusMap.get(currency)?.timeframes || {};
       return `<tr><td class="currency">${currency}</td>${timeframeOrder.map(tf => `<td>${timeframeCell(frames[tf])}</td>`).join('')}</tr>`;
     }).join('');
-
     const active = data.active_currencies || [];
     document.getElementById('signalRows').innerHTML = active.length ? active.map(item =>
-      `<tr><td class="currency">${escapeHTML(item.currency)}</td><td>${escapeHTML(timeframeNames[item.timeframe] || item.timeframe)}</td><td>${escapeHTML(timeAgo(item.last_active_at))}</td></tr>`
-    ).join('') : '<tr><td colspan="3">No active signals in the latest scan.</td></tr>';
+      `<tr><td class="currency">${escapeHTML(item.currency)}</td><td>${escapeHTML(timeframeNames[item.timeframe] || item.timeframe)}</td><td>${'★'.repeat(item.impact_stars || 1)} <span class="muted">${escapeHTML(item.impact_label || '')}</span></td><td>${escapeHTML(item.expanding_pairs ?? 0)} / 7</td><td>${escapeHTML(timeAgo(item.last_active_at))}</td></tr>`
+    ).join('') : '<tr><td colspan="5">No active signals in the latest scan.</td></tr>';
   }
   async function refreshResults() {
     try {
@@ -146,10 +141,10 @@
       const data = await response.json();
       const items = data.items || [];
       document.getElementById('historyRows').innerHTML = items.length ? items.slice(0, 50).map(item =>
-        `<tr><td class="currency">${escapeHTML(item.currency)}</td><td>${escapeHTML(timeframeNames[item.timeframe] || item.timeframe)}</td><td>${escapeHTML(timeAgo(item.last_active_at))}</td><td>${escapeHTML(timeText(item.detected_at))}</td></tr>`
-      ).join('') : '<tr><td colspan="4">No activity events recorded in this server session yet.</td></tr>';
+        `<tr><td class="currency">${escapeHTML(item.currency)}</td><td>${escapeHTML(timeframeNames[item.timeframe] || item.timeframe)}</td><td>${'★'.repeat(item.impact_stars || 1)}</td><td>${escapeHTML(timeAgo(item.last_active_at))}</td><td>${escapeHTML(timeText(item.detected_at))}</td></tr>`
+      ).join('') : '<tr><td colspan="5">No activity events recorded in this server session yet.</td></tr>';
     } catch (error) {
-      document.getElementById('historyRows').innerHTML = '<tr><td colspan="4">Activity history is unavailable.</td></tr>';
+      document.getElementById('historyRows').innerHTML = '<tr><td colspan="5">Activity history is unavailable.</td></tr>';
     }
   }
   refreshResults();
