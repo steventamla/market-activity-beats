@@ -23,7 +23,7 @@ const PAIRS = [
 // Activity is detected from candle-range expansion relative to the prior baseline.
 const RANGE_MULTIPLIER = 1.5;
 const BASELINE_CANDLES = 14;
-const MIN_EXPANSION_PAIRS = 3;
+const MIN_EXPANSION_PAIRS = 1; // Report activity from the first affected pair; impact stars show breadth.
 const BATCH_SIZE = 7;
 const BATCH_DELAY_MS = 61000;
 // 1,200 five-minute candles provides enough history for the 4-hour baseline.
@@ -189,6 +189,8 @@ function scoreCurrency(currency, signals, timeframeLabel) {
   );
 
   const active = matchingPairs.length >= MIN_EXPANSION_PAIRS;
+  const impactStars = matchingPairs.length >= 6 ? 3 : matchingPairs.length >= 3 ? 2 : matchingPairs.length >= 1 ? 1 : 0;
+  const impactLabel = impactStars === 3 ? 'High impact' : impactStars === 2 ? 'Moderate impact' : impactStars === 1 ? 'Early activity' : 'Inactive';
   const key = `${currency}|${timeframeLabel}`;
 
   const currentActiveAt = active
@@ -203,6 +205,8 @@ function scoreCurrency(currency, signals, timeframeLabel) {
 
   return {
     active,
+    impact_stars: impactStars,
+    impact_label: impactLabel,
     last_active_at: currentActiveAt || lastActiveMemory[key] || null,
     expanding_pairs: matchingPairs.length,
     pairs: active
@@ -270,6 +274,8 @@ async function executeMarketScan() {
           currency: row.currency,
           timeframe: timeframe.label,
           status: 'ACTIVE',
+          impact_stars: result.impact_stars,
+          impact_label: result.impact_label,
           last_active_at: result.last_active_at,
           expanding_pairs: result.expanding_pairs,
           pairs: result.pairs
