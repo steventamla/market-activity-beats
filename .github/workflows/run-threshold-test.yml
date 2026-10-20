@@ -1,6 +1,6 @@
 name: Historical Threshold Test
 
-on: 
+'on':
   workflow_dispatch:
 
 permissions:
@@ -9,18 +9,14 @@ permissions:
 jobs:
   threshold-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Check script syntax
+      - name: Check JavaScript syntax
         run: node --check historical-threshold-test.js
 
       - name: Run historical test
