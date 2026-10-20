@@ -1,37 +1,24 @@
-
 /**
  * Historical Threshold Test
  * Node.js 18+
  *
- * Run:
- *   node historical-threshold-test.js
+ * Tests six thresholds on historical Twelve Data candles.
+ * Does not modify or run the live scanner.
  *
- * Optional:
- *   TEST_DAYS=5 MAX_PAIRS=4 node historical-threshold-test.js
- *
- * Required environment variable:
- *   TWELVE_DATA_API_KEY
- *
- * This test does not modify or run the live scanner.
+ * Run in GitHub Actions using the existing workflow.
  */
 
 const API_KEY = process.env.TWELVE_DATA_API_KEY;
+const DAYS = Math.max(2, Number.parseInt(process.env.TEST_DAYS || "5", 10));
+const MAX_PAIRS = Math.max(1, Math.min(28, Number.parseInt(process.env.MAX_PAIRS || "4", 10)));
 
-const DAYS = Math.max(
-  2,
-  Number.parseInt(process.env.TEST_DAYS || "5", 10)
-);
-
-const MAX_PAIRS = Math.max(
-  1,
-  Math.min(28, Number.parseInt(process.env.MAX_PAIRS || "4", 10))
-);
-
-// Twelve Data Basic allows 8 credits per minute.
-// Ten-second spacing stays below that request frequency.
-const REQUEST_DELAY_MS = 10_000;
-const RETRY_DELAY_MS = 65_000;
+const THRESHOLDS = [1.5, 1.75, 2, 2.25, 2.5, 3];
+const BASELINE = 14;
+const FIVE_MIN_MS = 300000;
+const REQUEST_DELAY_MS = 10000;
+const RETRY_DELAY_MS = 65000;
 const MAX_RETRIES = 3;
+const BODY_RATIO_MIN = 0.60;
 
 const PAIRS = [
   "EUR/USD", "GBP/USD", "AUD/USD", "NZD/USD",
@@ -45,10 +32,6 @@ const PAIRS = [
   "CAD/CHF", "CAD/JPY", "CHF/JPY"
 ];
 
-const THRESHOLDS = [1.5, 1.75, 2, 2.25, 2.5, 3];
-const BASELINE = 14;
-const FIVE_MIN_MS = 5 * 60 * 1000;
-
 const TIMEFRAMES = [
   { label: "5m", ms: 5 * 60 * 1000, n: 1 },
   { label: "15m", ms: 15 * 60 * 1000, n: 3 },
@@ -56,47 +39,40 @@ const TIMEFRAMES = [
   { label: "4h", ms: 4 * 60 * 60 * 1000, n: 48 }
 ];
 
-const sleep = ms =>
-  new Promise(resolve => setTimeout(resolve, ms));
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function candleTime(candle) {
   if (!candle?.datetime) return NaN;
 
   const value = String(candle.datetime);
-  const iso = value.includes("T")
-    ? value
-    : value.replace(" ", "T");
+  const iso = value.includes("T") ? value : value.replace(" ", "T");
 
   return Date.parse(
     /[zZ]|[+-]\d\d:\d\d$/.test(iso) ? iso : iso + "Z"
   );
 }
 
-function numberOrNull(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+function num(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
-function candleRange(candle) {
-  const high = numberOrNull(candle.high);
-  const low = numberOrNull(candle.low);
+function range(candle) {
+  const high = num(candle.high);
+  const low = num(candle.low);
 
-  if (high === null || low === null || high < low) {
-    return null;
-  }
-
+  if (high === null || low === null || high < low) return null;
   return high - low;
 }
 
-function apiErrorMessage(data, status) {
+function apiError(data, status) {
   if (data?.message) return data.message;
   if (data?.code) return `API error code ${data.code}`;
-  return `HTTP status ${status}`;
+  return `HTTP ${status}`;
 }
 
-function isRateLimitError(message) {
-  return /rate limit|credits per minute|run out of api credits|too many requests|429/i
-    .test(message);
+function rateLimited(message) {
+  return /rate limit|credits per minute|too many requests|429/i.test(message);
 }
 
 async function fetchCandles(symbol) {
@@ -104,15 +80,11 @@ async function fetchCandles(symbol) {
 
   url.searchParams.set("symbol", symbol);
   url.searchParams.set("interval", "5min");
-  url.searchParams.set(
-    "outputsize",
-    String(Math.min(5000, DAYS * 288 + 60))
-  );
+  url.searchParams.set("outputsize", String(Math.min(5000, DAYS * 288 + 60)));
   url.searchParams.set("timezone", "UTC");
   url.searchParams.set("apikey", API_KEY);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    // Space every API attempt, including retries.
     await sleep(REQUEST_DELAY_MS);
 
     let response;
@@ -122,16 +94,9 @@ async function fetchCandles(symbol) {
       response = await fetch(url);
       data = await response.json();
     } catch (error) {
-      if (attempt === MAX_RETRIES) {
-        throw new Error(`Network failure: ${error.message}`);
-      }
-
-      const wait = Math.min(
-        RETRY_DELAY_MS,
-        15_000 * (attempt + 1)
-      );
-
-      console.log(`  Network issue. Retrying in ${wait / 1000}s.`);
+      if (attempt === MAX_RETRIES) throw error;
+      const wait = Math.min(RETRY_DELAY_MS, 15000 * (attempt + 1));
+      console.log(`  Network error; retrying in ${wait / 1000}s.`);
       await sleep(wait);
       continue;
     }
@@ -143,14 +108,10 @@ async function fetchCandles(symbol) {
       !Array.isArray(data?.values);
 
     if (invalid) {
-      const message = apiErrorMessage(data, response.status);
+      const message = apiError(data, response.status);
 
-      if (isRateLimitError(message) && attempt < MAX_RETRIES) {
-        console.log(
-          `  Rate limit reached for ${symbol}. ` +
-          `Waiting ${RETRY_DELAY_MS / 1000}s before retry.`
-        );
-
+      if (rateLimited(message) && attempt < MAX_RETRIES) {
+        console.log(`  Rate limit; waiting ${RETRY_DELAY_MS / 1000}s.`);
         await sleep(RETRY_DELAY_MS);
         continue;
       }
@@ -167,21 +128,17 @@ async function fetchCandles(symbol) {
         return (
           Number.isFinite(time) &&
           time + FIVE_MIN_MS <= now &&
-          candleRange(candle) !== null &&
-          numberOrNull(candle.open) !== null &&
-          numberOrNull(candle.close) !== null
+          range(candle) !== null &&
+          num(candle.open) !== null &&
+          num(candle.close) !== null
         );
       })
       .sort((a, b) => candleTime(a) - candleTime(b));
   }
 
-  throw new Error("Request failed after all retries.");
+  throw new Error(`Could not retrieve ${symbol}`);
 }
 
-/**
- * Build higher-timeframe candles from complete 5-minute candles.
- * Incomplete buckets are excluded.
- */
 function aggregateCandles(candles, timeframe) {
   if (timeframe.n === 1) return candles;
 
@@ -191,40 +148,32 @@ function aggregateCandles(candles, timeframe) {
     const time = candleTime(candle);
     const start = Math.floor(time / timeframe.ms) * timeframe.ms;
 
-    if (!buckets.has(start)) {
-      buckets.set(start, new Map());
-    }
-
+    if (!buckets.has(start)) buckets.set(start, new Map());
     buckets.get(start).set(time, candle);
   }
 
   const result = [];
 
   for (const [start, bucket] of buckets) {
-    const expectedTimes = Array.from(
+    const times = Array.from(
       { length: timeframe.n },
-      (_, index) => start + index * FIVE_MIN_MS
+      (_, i) => start + i * FIVE_MIN_MS
     );
 
-    if (!expectedTimes.every(time => bucket.has(time))) {
-      continue;
-    }
+    if (!times.every(time => bucket.has(time))) continue;
 
-    const group = expectedTimes.map(time => bucket.get(time));
-    const highs = group.map(candle => numberOrNull(candle.high));
-    const lows = group.map(candle => numberOrNull(candle.low));
-
-    const open = numberOrNull(group[0].open);
-    const close = numberOrNull(group[group.length - 1].close);
+    const group = times.map(time => bucket.get(time));
+    const highs = group.map(c => num(c.high));
+    const lows = group.map(c => num(c.low));
+    const open = num(group[0].open);
+    const close = num(group[group.length - 1].close);
 
     if (
       open === null ||
       close === null ||
-      highs.some(value => value === null) ||
-      lows.some(value => value === null)
-    ) {
-      continue;
-    }
+      highs.some(v => v === null) ||
+      lows.some(v => v === null)
+    ) continue;
 
     result.push({
       datetime: new Date(start).toISOString(),
@@ -235,57 +184,51 @@ function aggregateCandles(candles, timeframe) {
     });
   }
 
-  return result;
+  return result.sort((a, b) => candleTime(a) - candleTime(b));
 }
 
 /**
- * Compare each candle's full high-low range against
- * the average range of the 14 candles immediately before it.
+ * A signal occurs when current range >= threshold * average
+ * range of the previous 14 candles.
+ *
+ * Body-filter signal additionally requires:
+ * absolute(close - open) / (high - low) >= 0.60
  */
 function testThreshold(candles, threshold) {
   let eligible = 0;
   let rangeSignals = 0;
   let bodySignals = 0;
-
   const ratios = [];
 
-  for (let index = BASELINE; index < candles.length; index++) {
-    const current = candles[index];
-    const currentRange = candleRange(current);
+  for (let i = BASELINE; i < candles.length; i++) {
+    const current = candles[i];
+    const currentRange = range(current);
 
-    const previousRanges = candles
-      .slice(index - BASELINE, index)
-      .map(candleRange);
+    const previous = candles
+      .slice(i - BASELINE, i)
+      .map(range);
 
     if (
       currentRange === null ||
-      previousRanges.some(range => range === null)
-    ) {
-      continue;
-    }
+      previous.some(value => value === null)
+    ) continue;
 
-    const average =
-      previousRanges.reduce((sum, range) => sum + range, 0) /
-      previousRanges.length;
+    const average = previous.reduce((sum, value) => sum + value, 0)
+      / previous.length;
 
     if (average <= 0) continue;
 
     eligible++;
 
     const ratio = currentRange / average;
-
     if (ratio < threshold) continue;
 
     rangeSignals++;
     ratios.push(ratio);
 
-    const open = numberOrNull(current.open);
-    const close = numberOrNull(current.close);
-    const body = Math.abs(close - open);
+    const body = Math.abs(num(current.close) - num(current.open));
 
-    // Diagnostic count only; this filter is not applied
-    // to the range-signal count.
-    if (currentRange > 0 && body / currentRange >= 0.60) {
+    if (currentRange > 0 && body / currentRange >= BODY_RATIO_MIN) {
       bodySignals++;
     }
   }
@@ -296,129 +239,127 @@ function testThreshold(candles, threshold) {
     eligible,
     rangeSignals,
     bodySignals,
-    median: ratios.length
+    medianRatio: ratios.length
       ? ratios[Math.floor(ratios.length / 2)]
       : null
   };
 }
 
-function formatRow(values) {
-  return values
-    .map(value => String(value).padEnd(19))
-    .join("| ");
+function printTable(rows) {
+  const columns = [
+    ["Threshold", 10],
+    ["TF", 5],
+    ["Eligible", 12],
+    ["Range signals", 15],
+    ["Body-filter signals", 21],
+    ["Filtered out %", 16],
+    ["Range signals / 1000", 22]
+  ];
+
+  console.log(columns.map(([name, width]) => name.padEnd(width)).join(""));
+  console.log("-".repeat(columns.reduce((sum, [, width]) => sum + width, 0)));
+
+  for (const row of rows) {
+    const filtered = row.rangeSignals
+      ? ((row.rangeSignals - row.bodySignals) / row.rangeSignals * 100)
+      : 0;
+
+    const rate = row.eligible
+      ? row.rangeSignals / row.eligible * 1000
+      : 0;
+
+    const values = [
+      row.threshold,
+      row.timeframe,
+      row.eligible,
+      row.rangeSignals,
+      row.bodySignals,
+      `${filtered.toFixed(1)}%`,
+      rate.toFixed(1)
+    ];
+
+    console.log(values.map((value, i) =>
+      String(value).padEnd(columns[i][1])
+    ).join(""));
+  }
 }
 
 async function main() {
   if (!API_KEY) {
-    console.error(
-      "Missing TWELVE_DATA_API_KEY environment variable."
-    );
-    console.error(
-      "Set it in your environment or GitHub Actions secret. " +
-      "Do not paste the key into this file."
-    );
+    console.error("Missing TWELVE_DATA_API_KEY.");
+    console.error("Set it as a GitHub Actions secret. Do not put the key in this file.");
     process.exitCode = 1;
     return;
   }
 
   const pairs = PAIRS.slice(0, MAX_PAIRS);
-  const data = new Map();
+  const datasets = new Map();
 
   console.log("HISTORICAL THRESHOLD TEST");
-  console.log("Pairs:", pairs.join(", "));
-  console.log("History requested:", DAYS, "days");
-  console.log("Thresholds:", THRESHOLDS.join(", "));
-  console.log("Request spacing:", REQUEST_DELAY_MS / 1000, "seconds");
-  console.log("Maximum retries per pair:", MAX_RETRIES);
-  console.log("");
+  console.log(`Pairs requested: ${pairs.join(", ")}`);
+  console.log(`History: ${DAYS} days`);
+  console.log(`Thresholds: ${THRESHOLDS.join(", ")}`);
+  console.log(`Body filter: ${BODY_RATIO_MIN * 100}% of candle range`);
+  console.log("Fetching historical data...\n");
 
-  for (let index = 0; index < pairs.length; index++) {
-    const pair = pairs[index];
-
-    console.log(
-      `[${index + 1}/${pairs.length}] Fetching ${pair}...`
-    );
+  for (let i = 0; i < pairs.length; i++) {
+    const pair = pairs[i];
+    console.log(`[${i + 1}/${pairs.length}] ${pair}`);
 
     try {
       const candles = await fetchCandles(pair);
-      data.set(pair, candles);
-
-      console.log(
-        `  Received ${candles.length} completed 5m candles.`
-      );
+      datasets.set(pair, candles);
+      console.log(`  ${candles.length} completed 5m candles`);
     } catch (error) {
-      console.error(`  FAILED ${pair}: ${error.message}`);
+      console.error(`  FAILED: ${error.message}`);
     }
   }
 
-  if (data.size === 0) {
-    console.error(
-      "\nNo historical data was retrieved. Check the API key, " +
-      "remaining credits, and Twelve Data plan limits."
-    );
+  if (datasets.size === 0) {
+    console.error("No data retrieved. Check the API key, credits and plan limits.");
     process.exitCode = 1;
     return;
   }
 
-  console.log("\nRESULTS");
-  console.log(
-    "Threshold | TF | Eligible candles | Range signals | " +
-    "Body-filter signals | Median ratio"
-  );
-  console.log("-".repeat(88));
+  const rows = [];
 
   for (const timeframe of TIMEFRAMES) {
     for (const threshold of THRESHOLDS) {
-      let eligible = 0;
-      let signals = 0;
-      let bodySignals = 0;
-      const medians = [];
+      const total = {
+        threshold,
+        timeframe: timeframe.label,
+        eligible: 0,
+        rangeSignals: 0,
+        bodySignals: 0
+      };
 
-      for (const candles of data.values()) {
+      for (const candles of datasets.values()) {
         const aggregated = aggregateCandles(candles, timeframe);
         const result = testThreshold(aggregated, threshold);
 
-        eligible += result.eligible;
-        signals += result.rangeSignals;
-        bodySignals += result.bodySignals;
-
-        if (result.median !== null) {
-          medians.push(result.median);
-        }
+        total.eligible += result.eligible;
+        total.rangeSignals += result.rangeSignals;
+        total.bodySignals += result.bodySignals;
       }
 
-      medians.sort((a, b) => a - b);
-
-      const median = medians.length
-        ? medians[Math.floor(medians.length / 2)].toFixed(2)
-        : "-";
-
-      console.log(
-        `${String(threshold).padEnd(9)} | ` +
-        `${timeframe.label.padEnd(2)} | ` +
-        `${String(eligible).padEnd(16)} | ` +
-        `${String(signals).padEnd(13)} | ` +
-        `${String(bodySignals).padEnd(19)} | ${median}`
-      );
+      rows.push(total);
     }
   }
 
-  console.log("\nTest complete.");
-  console.log("Pairs successfully tested:", data.size, "of", pairs.length);
-  console.log(
-    "These counts measure historical candle expansions, " +
-    "not proven institutional activity or predictive accuracy."
-  );
-  console.log(
-    "The body-filter count is diagnostic only; it is not " +
-    "applied to the range-signal count or the live scanner."
-  );
+  console.log("\nRESULTS — COMBINED ACROSS SUCCESSFULLY TESTED PAIRS\n");
+  printTable(rows);
 
-  if (data.size < pairs.length) {
-    console.log(
-      "WARNING: Some pairs failed. Results cover only the pairs " +
-      "whose historical data was retrieved successfully."
-    );
+  console.log("\nPAIRS SUCCESSFULLY TESTED:", datasets.size, "of", pairs.length);
+  console.log("\nHOW TO READ THE RESULTS");
+  console.log("- Fewer range signals means a higher threshold is more selective.");
+  console.log("- Body-filter signals are a subset of range signals.");
+  console.log("- Filtered out % shows how many range signals fail the body filter.");
+  console.log("- Range signals / 1000 normalizes signal counts by eligible candles.");
+  console.log("- These are historical candle-expansion counts, not proof of institutional activity or predictive accuracy.");
+  console.log("- This test does not change the live scanner.");
+
+  if (datasets.size < pairs.length) {
+    console.log("\nWARNING: Some pairs failed; results use only successfully retrieved pairs.");
   }
 }
 
