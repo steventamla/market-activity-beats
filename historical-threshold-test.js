@@ -1,17 +1,37 @@
+
 /**
  * Historical Threshold Test
- * Requires Node.js 18+ and TWELVE_DATA_API_KEY.
- * Run: node historical-threshold-test.js
+ * Node.js 18+
+ *
+ * Run:
+ *   node historical-threshold-test.js
  *
  * Optional:
- * TEST_DAYS=5 MAX_PAIRS=4 node historical-threshold-test.js
+ *   TEST_DAYS=5 MAX_PAIRS=4 node historical-threshold-test.js
  *
- * This script is separate from the live scanner.
+ * Required environment variable:
+ *   TWELVE_DATA_API_KEY
+ *
+ * This test does not modify or run the live scanner.
  */
 
 const API_KEY = process.env.TWELVE_DATA_API_KEY;
-const DAYS = Math.max(2, Number.parseInt(process.env.TEST_DAYS || "5", 10));
-const MAX_PAIRS = Math.max(1, Number.parseInt(process.env.MAX_PAIRS || "4", 10));
+
+const DAYS = Math.max(
+  2,
+  Number.parseInt(process.env.TEST_DAYS || "5", 10)
+);
+
+const MAX_PAIRS = Math.max(
+  1,
+  Math.min(28, Number.parseInt(process.env.MAX_PAIRS || "4", 10))
+);
+
+// Twelve Data Basic allows 8 credits per minute.
+// Ten-second spacing stays below that request frequency.
+const REQUEST_DELAY_MS = 10_000;
+const RETRY_DELAY_MS = 65_000;
+const MAX_RETRIES = 3;
 
 const PAIRS = [
   "EUR/USD", "GBP/USD", "AUD/USD", "NZD/USD",
@@ -27,7 +47,7 @@ const PAIRS = [
 
 const THRESHOLDS = [1.5, 1.75, 2, 2.25, 2.5, 3];
 const BASELINE = 14;
-const FIVE_MIN = 5 * 60 * 1000;
+const FIVE_MIN_MS = 5 * 60 * 1000;
 
 const TIMEFRAMES = [
   { label: "5m", ms: 5 * 60 * 1000, n: 1 },
@@ -36,22 +56,47 @@ const TIMEFRAMES = [
   { label: "4h", ms: 4 * 60 * 60 * 1000, n: 48 }
 ];
 
-function candleTime(c) {
-  if (!c?.datetime) return NaN;
-  const s = String(c.datetime);
-  const iso = s.includes("T") ? s : s.replace(" ", "T");
-  return Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(iso) ? iso : iso + "Z");
+const sleep = ms =>
+  new Promise(resolve => setTimeout(resolve, ms));
+
+function candleTime(candle) {
+  if (!candle?.datetime) return NaN;
+
+  const value = String(candle.datetime);
+  const iso = value.includes("T")
+    ? value
+    : value.replace(" ", "T");
+
+  return Date.parse(
+    /[zZ]|[+-]\d\d:\d\d$/.test(iso) ? iso : iso + "Z"
+  );
 }
 
-function num(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+function numberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
-function candleRange(c) {
-  const h = num(c.high);
-  const l = num(c.low);
-  return h === null || l === null || h < l ? null : h - l;
+function candleRange(candle) {
+  const high = numberOrNull(candle.high);
+  const low = numberOrNull(candle.low);
+
+  if (high === null || low === null || high < low) {
+    return null;
+  }
+
+  return high - low;
+}
+
+function apiErrorMessage(data, status) {
+  if (data?.message) return data.message;
+  if (data?.code) return `API error code ${data.code}`;
+  return `HTTP status ${status}`;
+}
+
+function isRateLimitError(message) {
+  return /rate limit|credits per minute|run out of api credits|too many requests|429/i
+    .test(message);
 }
 
 async function fetchCandles(symbol) {
@@ -66,62 +111,120 @@ async function fetchCandles(symbol) {
   url.searchParams.set("timezone", "UTC");
   url.searchParams.set("apikey", API_KEY);
 
-  const response = await fetch(url);
-  const data = await response.json();
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Space every API attempt, including retries.
+    await sleep(REQUEST_DELAY_MS);
 
-  if (
-    !response.ok ||
-    data?.status === "error" ||
-    data?.code ||
-    !Array.isArray(data?.values)
-  ) {
-    throw new Error(data?.message || "Unexpected Twelve Data response");
+    let response;
+    let data;
+
+    try {
+      response = await fetch(url);
+      data = await response.json();
+    } catch (error) {
+      if (attempt === MAX_RETRIES) {
+        throw new Error(`Network failure: ${error.message}`);
+      }
+
+      const wait = Math.min(
+        RETRY_DELAY_MS,
+        15_000 * (attempt + 1)
+      );
+
+      console.log(`  Network issue. Retrying in ${wait / 1000}s.`);
+      await sleep(wait);
+      continue;
+    }
+
+    const invalid =
+      !response.ok ||
+      data?.status === "error" ||
+      Boolean(data?.code) ||
+      !Array.isArray(data?.values);
+
+    if (invalid) {
+      const message = apiErrorMessage(data, response.status);
+
+      if (isRateLimitError(message) && attempt < MAX_RETRIES) {
+        console.log(
+          `  Rate limit reached for ${symbol}. ` +
+          `Waiting ${RETRY_DELAY_MS / 1000}s before retry.`
+        );
+
+        await sleep(RETRY_DELAY_MS);
+        continue;
+      }
+
+      throw new Error(message);
+    }
+
+    const now = Date.now();
+
+    return data.values
+      .filter(candle => {
+        const time = candleTime(candle);
+
+        return (
+          Number.isFinite(time) &&
+          time + FIVE_MIN_MS <= now &&
+          candleRange(candle) !== null &&
+          numberOrNull(candle.open) !== null &&
+          numberOrNull(candle.close) !== null
+        );
+      })
+      .sort((a, b) => candleTime(a) - candleTime(b));
   }
 
-  return data.values
-    .filter(c =>
-      Number.isFinite(candleTime(c)) &&
-      candleTime(c) + FIVE_MIN <= Date.now()
-    )
-    .sort((a, b) => candleTime(a) - candleTime(b));
+  throw new Error("Request failed after all retries.");
 }
 
-function aggregateCandles(candles, tf) {
-  if (tf.n === 1) return candles;
+/**
+ * Build higher-timeframe candles from complete 5-minute candles.
+ * Incomplete buckets are excluded.
+ */
+function aggregateCandles(candles, timeframe) {
+  if (timeframe.n === 1) return candles;
 
   const buckets = new Map();
 
-  for (const c of candles) {
-    const t = candleTime(c);
-    const start = Math.floor(t / tf.ms) * tf.ms;
+  for (const candle of candles) {
+    const time = candleTime(candle);
+    const start = Math.floor(time / timeframe.ms) * timeframe.ms;
 
-    if (!buckets.has(start)) buckets.set(start, new Map());
-    buckets.get(start).set(t, c);
+    if (!buckets.has(start)) {
+      buckets.set(start, new Map());
+    }
+
+    buckets.get(start).set(time, candle);
   }
 
   const result = [];
 
   for (const [start, bucket] of buckets) {
-    const times = Array.from(
-      { length: tf.n },
-      (_, i) => start + i * FIVE_MIN
+    const expectedTimes = Array.from(
+      { length: timeframe.n },
+      (_, index) => start + index * FIVE_MIN_MS
     );
 
-    // Use only complete higher-timeframe candles.
-    if (!times.every(t => bucket.has(t))) continue;
+    if (!expectedTimes.every(time => bucket.has(time))) {
+      continue;
+    }
 
-    const group = times.map(t => bucket.get(t));
-    const highs = group.map(c => num(c.high));
-    const lows = group.map(c => num(c.low));
-    const open = num(group[0].open);
-    const close = num(group[group.length - 1].close);
+    const group = expectedTimes.map(time => bucket.get(time));
+    const highs = group.map(candle => numberOrNull(candle.high));
+    const lows = group.map(candle => numberOrNull(candle.low));
+
+    const open = numberOrNull(group[0].open);
+    const close = numberOrNull(group[group.length - 1].close);
 
     if (
       open === null ||
       close === null ||
-      highs.some(v => v === null) ||
-      lows.some(v => v === null)
-    ) continue;
+      highs.some(value => value === null) ||
+      lows.some(value => value === null)
+    ) {
+      continue;
+    }
 
     result.push({
       datetime: new Date(start).toISOString(),
@@ -135,28 +238,34 @@ function aggregateCandles(candles, tf) {
   return result;
 }
 
-// Each candle is compared only with the 14 candles before it.
+/**
+ * Compare each candle's full high-low range against
+ * the average range of the 14 candles immediately before it.
+ */
 function testThreshold(candles, threshold) {
   let eligible = 0;
   let rangeSignals = 0;
   let bodySignals = 0;
+
   const ratios = [];
 
-  for (let i = BASELINE; i < candles.length; i++) {
-    const current = candles[i];
+  for (let index = BASELINE; index < candles.length; index++) {
+    const current = candles[index];
     const currentRange = candleRange(current);
 
     const previousRanges = candles
-      .slice(i - BASELINE, i)
+      .slice(index - BASELINE, index)
       .map(candleRange);
 
     if (
       currentRange === null ||
-      previousRanges.some(r => r === null)
-    ) continue;
+      previousRanges.some(range => range === null)
+    ) {
+      continue;
+    }
 
     const average =
-      previousRanges.reduce((sum, r) => sum + r, 0) /
+      previousRanges.reduce((sum, range) => sum + range, 0) /
       previousRanges.length;
 
     if (average <= 0) continue;
@@ -164,16 +273,18 @@ function testThreshold(candles, threshold) {
     eligible++;
 
     const ratio = currentRange / average;
+
     if (ratio < threshold) continue;
 
     rangeSignals++;
     ratios.push(ratio);
 
-    const open = num(current.open);
-    const close = num(current.close);
+    const open = numberOrNull(current.open);
+    const close = numberOrNull(current.close);
     const body = Math.abs(close - open);
 
-    // Diagnostic only: body is at least 60% of full candle range.
+    // Diagnostic count only; this filter is not applied
+    // to the range-signal count.
     if (currentRange > 0 && body / currentRange >= 0.60) {
       bodySignals++;
     }
@@ -191,49 +302,72 @@ function testThreshold(candles, threshold) {
   };
 }
 
+function formatRow(values) {
+  return values
+    .map(value => String(value).padEnd(19))
+    .join("| ");
+}
+
 async function main() {
   if (!API_KEY) {
-    console.error("Missing TWELVE_DATA_API_KEY environment variable.");
     console.error(
-      "Set it securely. Never paste your API key into this code or commit it to GitHub."
+      "Missing TWELVE_DATA_API_KEY environment variable."
+    );
+    console.error(
+      "Set it in your environment or GitHub Actions secret. " +
+      "Do not paste the key into this file."
     );
     process.exitCode = 1;
     return;
   }
 
-  const pairs = PAIRS.slice(0, Math.min(MAX_PAIRS, PAIRS.length));
+  const pairs = PAIRS.slice(0, MAX_PAIRS);
   const data = new Map();
 
-  console.log("Historical threshold test — read-only");
+  console.log("HISTORICAL THRESHOLD TEST");
   console.log("Pairs:", pairs.join(", "));
-  console.log("Requested history in days:", DAYS);
+  console.log("History requested:", DAYS, "days");
   console.log("Thresholds:", THRESHOLDS.join(", "));
+  console.log("Request spacing:", REQUEST_DELAY_MS / 1000, "seconds");
+  console.log("Maximum retries per pair:", MAX_RETRIES);
   console.log("");
 
-  for (const pair of pairs) {
+  for (let index = 0; index < pairs.length; index++) {
+    const pair = pairs[index];
+
+    console.log(
+      `[${index + 1}/${pairs.length}] Fetching ${pair}...`
+    );
+
     try {
-      console.log("Fetching", pair);
       const candles = await fetchCandles(pair);
       data.set(pair, candles);
-      console.log("  Completed 5m candles:", candles.length);
+
+      console.log(
+        `  Received ${candles.length} completed 5m candles.`
+      );
     } catch (error) {
-      console.error("  FAILED:", pair, error.message);
+      console.error(`  FAILED ${pair}: ${error.message}`);
     }
   }
 
   if (data.size === 0) {
-    console.error("No data retrieved. Check API access, credits and symbols.");
+    console.error(
+      "\nNo historical data was retrieved. Check the API key, " +
+      "remaining credits, and Twelve Data plan limits."
+    );
     process.exitCode = 1;
     return;
   }
 
   console.log("\nRESULTS");
   console.log(
-    "Threshold | TF | Eligible candles | Range signals | Body-filter signals | Median ratio"
+    "Threshold | TF | Eligible candles | Range signals | " +
+    "Body-filter signals | Median ratio"
   );
-  console.log("-".repeat(84));
+  console.log("-".repeat(88));
 
-  for (const tf of TIMEFRAMES) {
+  for (const timeframe of TIMEFRAMES) {
     for (const threshold of THRESHOLDS) {
       let eligible = 0;
       let signals = 0;
@@ -241,14 +375,16 @@ async function main() {
       const medians = [];
 
       for (const candles of data.values()) {
-        const aggregated = aggregateCandles(candles, tf);
+        const aggregated = aggregateCandles(candles, timeframe);
         const result = testThreshold(aggregated, threshold);
 
         eligible += result.eligible;
         signals += result.rangeSignals;
         bodySignals += result.bodySignals;
 
-        if (result.median !== null) medians.push(result.median);
+        if (result.median !== null) {
+          medians.push(result.median);
+        }
       }
 
       medians.sort((a, b) => a - b);
@@ -259,7 +395,7 @@ async function main() {
 
       console.log(
         `${String(threshold).padEnd(9)} | ` +
-        `${tf.label.padEnd(2)} | ` +
+        `${timeframe.label.padEnd(2)} | ` +
         `${String(eligible).padEnd(16)} | ` +
         `${String(signals).padEnd(13)} | ` +
         `${String(bodySignals).padEnd(19)} | ${median}`
@@ -268,12 +404,22 @@ async function main() {
   }
 
   console.log("\nTest complete.");
+  console.log("Pairs successfully tested:", data.size, "of", pairs.length);
   console.log(
-    "These are historical signal counts, not proof of institutional activity or predictive accuracy."
+    "These counts measure historical candle expansions, " +
+    "not proven institutional activity or predictive accuracy."
   );
   console.log(
-    "The body filter is diagnostic only; it has not been applied to your live scanner."
+    "The body-filter count is diagnostic only; it is not " +
+    "applied to the range-signal count or the live scanner."
   );
+
+  if (data.size < pairs.length) {
+    console.log(
+      "WARNING: Some pairs failed. Results cover only the pairs " +
+      "whose historical data was retrieved successfully."
+    );
+  }
 }
 
 main().catch(error => {
