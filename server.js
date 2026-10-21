@@ -120,7 +120,11 @@ async function sendPushNotification(
   const summary = signals.map(signal =>
     `Currency: ${signal.currency}\n` +
     `Timeframe: ${signal.timeframe}\n` +
-    `Time ago: ${timeAgo(signal.last_active_at)}`
+    `Time ago: ${timeAgo(signal.last_active_at)}\n` +
+    `Classification: ${signal.agreement || 'early'}\n` +
+    `Currency bias: ${signal.direction || 'unknown'}\n` +
+    `Pairs supporting: ${signal.supporting_pairs ?? 0}; opposing: ${signal.opposing_pairs ?? 0}\n` +
+    `Pairs: ${(signal.pairs || []).map(pair => pair.symbol + ' (' + pair.currency_vote + ')').join(', ') || 'none'}`
   ).join('\n\n');
 
   try {
@@ -192,7 +196,7 @@ app.get('/scan', async (req, res) => {
   try {
     const result = await runScanAndNotify();
 
-    res.status(result.scan_status === 'error' ? 502 : 200)
+    res.status(result.scan_status === 'error' ? 502 : result.scan_status === 'scanning' ? 409 : 200)
       .json(result);
   } catch (error) {
     console.error('Manual scan failed:', error);
