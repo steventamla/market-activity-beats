@@ -63,7 +63,15 @@ app.get('/activity-history', (req, res) => {
 });
 
 function signalKey(signal) {
-  return `${signal.currency}|${signal.timeframe}`;
+  // Treat each qualifying completed candle as a distinct impulse event.
+  // This prevents repeated alerts for the same candle while allowing a
+  // later, genuinely new impulse in the same currency/timeframe to alert.
+  const impulseCandles = (signal.pairs || [])
+    .map(pair => `${pair.symbol}:${pair.candle_time || ''}:${pair.pair_direction || ''}`)
+    .sort()
+    .join('|');
+
+  return `${signal.currency}|${signal.timeframe}|${impulseCandles}`;
 }
 
 function timeAgo(value) {
@@ -121,8 +129,7 @@ async function sendPushNotification(
     `Currency: ${signal.currency}\n` +
     `Timeframe: ${signal.timeframe}\n` +
     `Time ago: ${timeAgo(signal.last_active_at)}\n` +
-    `Classification: ${signal.agreement || 'early'}\n` +
-    `Currency bias: ${signal.direction || 'unknown'}\n` +
+    `Impulse bias: ${signal.direction || 'unknown'}\n` +
     `Pairs supporting: ${signal.supporting_pairs ?? 0}; opposing: ${signal.opposing_pairs ?? 0}\n` +
     `Pairs: ${(signal.pairs || []).map(pair => pair.symbol + ' (' + pair.currency_vote + ')').join(', ') || 'none'}`
   ).join('\n\n');
@@ -170,8 +177,9 @@ async function runScanAndNotify() {
     activeSignals.map(signalKey)
   );
 
-  // Only notify for a currency/timeframe absent from the previous
-  // successful scan's active set.
+  // Notify when a new qualifying impulse candle appears. The same candle
+  // is deduplicated, but a later impulse can alert even if the currency
+  // remained active on the previous scan.
   const newSignals = activeSignals.filter(
     signal => !previousActiveSignals.has(signalKey(signal))
   );
