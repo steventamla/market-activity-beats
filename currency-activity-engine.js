@@ -27,7 +27,7 @@ const ATR_PERIOD = 14;
 const ATR_MULTIPLIER = 2.0;
 const MIN_BODY_RATIO = 0.60;
 
-const MIN_EXPANSION_PAIRS = 1;
+const MIN_EXPANSION_PAIRS = 1; // Preserve one-pair early detection.
 const BATCH_SIZE = 7;
 const BATCH_DELAY_MS = 61000;
 const OUTPUT_SIZE = 1200;
@@ -316,7 +316,8 @@ function inspectCandles(symbol, candles, timeframeMs) {
     base,
     quote,
     rangeRatio: Number(rangeRatio.toFixed(2)),
-    bodyRatio: Number(bodyRatio.toFixed(2))
+    bodyRatio: Number(bodyRatio.toFixed(2)),
+    direction: close > open ? 'bullish' : 'bearish'
   };
 }
 
@@ -327,15 +328,35 @@ function scoreCurrency(currency, signals, timeframeLabel) {
 
   const active = matchingPairs.length >= MIN_EXPANSION_PAIRS;
 
+  // A bullish base/quote pair supports base strength and quote weakness;
+  // a bearish pair supports base weakness and quote strength.
+  const votes = matchingPairs.map(signal => ({
+    symbol: signal.symbol,
+    direction: signal.direction,
+    vote: signal.base === currency
+      ? (signal.direction === 'bullish' ? 1 : -1)
+      : (signal.direction === 'bullish' ? -1 : 1)
+  }));
+  const strengthScore = votes.reduce((sum, item) => sum + item.vote, 0);
+  const supportingPairs = votes.filter(item => item.vote === Math.sign(strengthScore)).length;
+  const opposingPairs = votes.length - supportingPairs;
+  const agreement = matchingPairs.length === 0 ? 'inactive'
+    : matchingPairs.length === 1 ? 'early'
+    : strengthScore === 0 ? 'conflicting'
+    : opposingPairs === 0 ? 'confirmed'
+    : supportingPairs > opposingPairs ? 'developing'
+    : 'conflicting';
+
   const impactStars =
-    matchingPairs.length >= 6 ? 3 :
-    matchingPairs.length >= 3 ? 2 :
+    agreement === 'confirmed' && matchingPairs.length >= 3 ? 3 :
+    agreement === 'confirmed' || agreement === 'developing' ? 2 :
     matchingPairs.length >= 1 ? 1 : 0;
 
   const impactLabel =
-    impactStars === 3 ? 'High impact' :
-    impactStars === 2 ? 'Moderate impact' :
-    impactStars === 1 ? 'Early activity' :
+    agreement === 'confirmed' ? 'Confirmed agreement' :
+    agreement === 'developing' ? 'Developing agreement' :
+    agreement === 'conflicting' ? 'Conflicting pairs' :
+    agreement === 'early' ? 'Early activity' :
     'Inactive';
 
   const key = `${currency}|${timeframeLabel}`;
@@ -358,12 +379,21 @@ function scoreCurrency(currency, signals, timeframeLabel) {
     impact_label: impactLabel,
     last_active_at: currentActiveAt || lastActiveMemory[key] || null,
     expanding_pairs: matchingPairs.length,
+    agreement,
+    strength_score: strengthScore,
+    supporting_pairs: supportingPairs,
+    opposing_pairs: opposingPairs,
+    direction: strengthScore > 0 ? 'strong' : strengthScore < 0 ? 'weak' : 'mixed',
     pairs: active
       ? matchingPairs.map(signal => ({
           symbol: signal.symbol,
           range_ratio: signal.rangeRatio,
           body_ratio: signal.bodyRatio,
-          candle_time: signal.datetime
+          candle_time: signal.datetime,
+          pair_direction: signal.direction,
+          currency_vote: signal.base === currency
+            ? (signal.direction === 'bullish' ? 'supports_strength' : 'supports_weakness')
+            : (signal.direction === 'bullish' ? 'supports_weakness' : 'supports_strength')
         }))
       : []
   };
@@ -476,6 +506,11 @@ async function executeMarketScan() {
           impact_label: result.impact_label,
           last_active_at: result.last_active_at,
           expanding_pairs: result.expanding_pairs,
+          agreement: result.agreement,
+          strength_score: result.strength_score,
+          supporting_pairs: result.supporting_pairs,
+          opposing_pairs: result.opposing_pairs,
+          direction: result.direction,
           pairs: result.pairs
         });
       }
