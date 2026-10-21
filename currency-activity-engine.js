@@ -257,17 +257,15 @@ function calculatePriorATR(candles) {
     ranges.push(range);
   }
 
-  // Match the historical test's Wilder ATR initialization.
-  if (ranges.length <= ATR_PERIOD) return null;
+  // Standard Wilder ATR: seed with the first 14 valid historical
+  // true ranges, then smooth every remaining historical range.
+  if (ranges.length < ATR_PERIOD) return null;
 
-  const seed = ranges.slice(1, ATR_PERIOD + 1);
-
-  if (seed.length !== ATR_PERIOD) return null;
+  const seed = ranges.slice(0, ATR_PERIOD);
 
   let atr = seed.reduce((sum, value) => sum + value, 0) / ATR_PERIOD;
 
-  // Wilder smoothing for all subsequent prior candles.
-  for (let i = ATR_PERIOD + 1; i < ranges.length; i++) {
+  for (let i = ATR_PERIOD; i < ranges.length; i++) {
     atr = (
       (atr * (ATR_PERIOD - 1)) + ranges[i]
     ) / ATR_PERIOD;
