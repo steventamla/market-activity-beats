@@ -85,9 +85,9 @@
     return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
   }
   function timeAgo(value) {
-    if (!value) return 'Unknown';
+    if (value === null || value === undefined || value === '') return 'Time unknown';
     const timestamp = new Date(value).getTime();
-    if (!Number.isFinite(timestamp)) return 'Unknown';
+    if (!Number.isFinite(timestamp)) return 'Time unknown';
     const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
     if (minutes < 1) return 'Just now';
     if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
@@ -104,7 +104,7 @@
   function timeframeCell(item) {
     if (!item || !item.active) return '<span class="inactive">Inactive</span>';
     const stars = '★'.repeat(item.impact_stars || 1);
-    return `<span class="active">ACTIVE ${stars}</span><br><span class="muted">${escapeHTML(item.expanding_pairs ?? 0)} pairs affected · Last active: ${escapeHTML(timeAgo(item.last_active_at))}</span>`;
+    return `<span class="active">ACTIVE ${stars}</span><br><span class="muted">${escapeHTML(item.expanding_pairs ?? 0)} pair${item.expanding_pairs === 1 ? '' : 's'} affected · Last active: ${escapeHTML(timeAgo(item.last_active_at))}</span>`;
   }
   function render(data) {
     if (!data) return;
