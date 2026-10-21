@@ -67,7 +67,7 @@ function signalKey(signal) {
   // This prevents repeated alerts for the same candle while allowing a
   // later, genuinely new impulse in the same currency/timeframe to alert.
   const impulseCandles = (signal.pairs || [])
-    .map(pair => `${pair.symbol}:${pair.candle_time || ''}:${pair.pair_direction || ''}`)
+    .map(pair => `${pair.symbol}:${pair.impulse_start_at || pair.candle_time || ''}:${pair.pair_direction || ''}`)
     .sort()
     .join('|');
 
@@ -131,6 +131,7 @@ async function sendPushNotification(
     `Time ago: ${timeAgo(signal.last_active_at)}\n` +
     `Impulse bias: ${signal.direction || 'unknown'}\n` +
     `Pairs supporting: ${signal.supporting_pairs ?? 0}; opposing: ${signal.opposing_pairs ?? 0}\n` +
+    `Impulse length: ${Math.max(1, ...((signal.pairs || []).map(pair => pair.impulse_candles || 1)))} candle(s)\n` +
     `Pairs: ${(signal.pairs || []).map(pair => pair.symbol + ' (' + pair.currency_vote + ')').join(', ') || 'none'}`
   ).join('\n\n');
 
