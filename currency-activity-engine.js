@@ -280,45 +280,74 @@ function inspectCandles(symbol, candles, timeframeMs) {
   }
 
   const current = candles[0];
-  const currentRange = candleRange(current);
-  const open = toNumber(current.open);
-  const close = toNumber(current.close);
   const atr = calculatePriorATR(candles);
 
-  if (
-    currentRange === null ||
-    currentRange <= 0 ||
-    open === null ||
-    close === null ||
-    atr === null
-  ) {
-    return null;
+  if (atr === null) return null;
+
+  // An impulse may form across one candle or several consecutive candles.
+  // Test the shortest qualifying run first, up to six candles. A run must
+  // make a large net directional move relative to prior ATR and show enough
+  // directional efficiency to avoid counting choppy back-and-forth movement.
+  const MAX_IMPULSE_CANDLES = 6;
+  const MIN_NET_MOVE_ATR = 2.0;
+  const MIN_DIRECTIONAL_EFFICIENCY = 0.60;
+
+  for (let count = 1; count <= MAX_IMPULSE_CANDLES; count++) {
+    const run = candles.slice(0, count); // newest first
+
+    if (run.length !== count) break;
+
+    const oldest = run[run.length - 1];
+    const oldestOpen = toNumber(oldest.open);
+    const newestClose = toNumber(run[0].close);
+
+    if (oldestOpen === null || newestClose === null) continue;
+
+    const netMove = newestClose - oldestOpen;
+    if (netMove === 0 || Math.abs(netMove) < MIN_NET_MOVE_ATR * atr) {
+      continue;
+    }
+
+    const totalTravel = run.reduce((sum, candle) => {
+      const open = toNumber(candle.open);
+      const close = toNumber(candle.close);
+      return open === null || close === null
+        ? sum
+        : sum + Math.abs(close - open);
+    }, 0);
+
+    const efficiency = totalTravel > 0
+      ? Math.abs(netMove) / totalTravel
+      : 0;
+
+    if (efficiency < MIN_DIRECTIONAL_EFFICIENCY) continue;
+
+    const [base, quote] = symbol.split('/');
+    const startTime = candleTime(oldest);
+    const endTime = candleTime(current);
+    const totalRange = run.reduce((sum, candle) => {
+      const range = candleRange(candle);
+      return sum + (range === null ? 0 : range);
+    }, 0);
+
+    return {
+      symbol,
+      datetime: Number.isFinite(endTime)
+        ? new Date(endTime + timeframeMs).toISOString()
+        : null,
+      impulse_start_at: Number.isFinite(startTime)
+        ? new Date(startTime).toISOString()
+        : null,
+      impulse_candles: count,
+      base,
+      quote,
+      rangeRatio: Number((Math.abs(netMove) / atr).toFixed(2)),
+      bodyRatio: Number(efficiency.toFixed(2)),
+      direction: netMove > 0 ? 'bullish' : 'bearish'
+    };
   }
 
-  // Require current range >= 2.0 times the prior ATR.
-  const rangeRatio = currentRange / atr;
-
-  if (rangeRatio < ATR_MULTIPLIER) return null;
-
-  // Require candle body >= 60% of the candle's total range.
-  const bodyRatio = Math.abs(close - open) / currentRange;
-
-  if (bodyRatio < MIN_BODY_RATIO) return null;
-
-  const [base, quote] = symbol.split('/');
-  const candleOpenTime = candleTime(current);
-
-  return {
-    symbol,
-    datetime: Number.isFinite(candleOpenTime)
-      ? new Date(candleOpenTime + timeframeMs).toISOString()
-      : null,
-    base,
-    quote,
-    rangeRatio: Number(rangeRatio.toFixed(2)),
-    bodyRatio: Number(bodyRatio.toFixed(2)),
-    direction: close > open ? 'bullish' : 'bearish'
-  };
+  return null;
 }
 
 function scoreCurrency(currency, signals, timeframeLabel) {
