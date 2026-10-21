@@ -288,7 +288,7 @@ function inspectCandles(symbol, candles, timeframeMs) {
   // Test the shortest qualifying run first, up to six candles. A run must
   // make a large net directional move relative to prior ATR and show enough
   // directional efficiency to avoid counting choppy back-and-forth movement.
-  const MAX_IMPULSE_CANDLES = 6;
+  const MAX_IMPULSE_CANDLES = 24;
   const MIN_NET_MOVE_ATR = 2.0;
   const MIN_DIRECTIONAL_EFFICIENCY = 0.60;
 
@@ -560,7 +560,10 @@ async function executeMarketScan() {
         method: 'Wilder ATR',
         atr_period: ATR_PERIOD,
         atr_multiplier: ATR_MULTIPLIER,
-        min_body_ratio: MIN_BODY_RATIO
+        min_body_ratio: MIN_BODY_RATIO,
+        impulse_detection: 'consecutive-candle net displacement',
+        max_impulse_candles: 24,
+        min_directional_efficiency: 0.60
       }
     };
   } catch (error) {
