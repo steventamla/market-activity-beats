@@ -419,6 +419,8 @@ function scoreCurrency(currency, signals, timeframeLabel) {
           range_ratio: signal.rangeRatio,
           body_ratio: signal.bodyRatio,
           candle_time: signal.datetime,
+          impulse_start_at: signal.impulse_start_at || signal.datetime,
+          impulse_candles: signal.impulse_candles || 1,
           pair_direction: signal.direction,
           currency_vote: signal.base === currency
             ? (signal.direction === 'bullish' ? 'supports_strength' : 'supports_weakness')
