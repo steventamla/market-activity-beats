@@ -1,4 +1,6 @@
 
+'use strict';
+
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'];
 
 const TIMEFRAMES = [
@@ -20,7 +22,7 @@ const PAIRS = [
   'CAD/CHF', 'CAD/JPY', 'CHF/JPY'
 ];
 
-// Detection settings selected from the historical ATR threshold test.
+// Final candidate settings from the historical threshold test.
 const ATR_PERIOD = 14;
 const ATR_MULTIPLIER = 2.0;
 const MIN_BODY_RATIO = 0.60;
@@ -35,7 +37,12 @@ let scanInProgress = false;
 const lastActiveMemory = {};
 
 function emptyTimeframe() {
-  return { active: false, last_active_at: null, expanding_pairs: 0, pairs: [] };
+  return {
+    active: false,
+    last_active_at: null,
+    expanding_pairs: 0,
+    pairs: []
+  };
 }
 
 function emptyCurrencyStatus() {
@@ -60,8 +67,8 @@ let latestScanData = {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function toNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  const result = Number(value);
+  return Number.isFinite(result) ? result : null;
 }
 
 function candleRange(candle) {
@@ -69,6 +76,7 @@ function candleRange(candle) {
   const low = toNumber(candle?.low);
 
   if (high === null || low === null || high < low) return null;
+
   return high - low;
 }
 
@@ -86,8 +94,10 @@ function candleTime(candle) {
 function parseBatch(data, symbols) {
   if (Array.isArray(data?.values) && data?.meta?.symbol) {
     const match = symbols.find(
-      symbol => symbol.toUpperCase() === String(data.meta.symbol).toUpperCase()
+      symbol =>
+        symbol.toUpperCase() === String(data.meta.symbol).toUpperCase()
     );
+
     return match ? { [match]: data } : {};
   }
 
@@ -99,10 +109,13 @@ function parseBatch(data, symbols) {
       data?.[symbol] ||
       data?.[symbol.replace('/', '')] ||
       dataKeys.map(key => data[key]).find(value =>
-        String(value?.meta?.symbol || '').toUpperCase() === symbol.toUpperCase()
+        String(value?.meta?.symbol || '').toUpperCase() ===
+        symbol.toUpperCase()
       );
 
-    if (Array.isArray(item?.values)) result[symbol] = item;
+    if (Array.isArray(item?.values)) {
+      result[symbol] = item;
+    }
   }
 
   return result;
@@ -121,7 +134,9 @@ async function fetchBatch(symbols, apiKey) {
   const data = await response.json();
 
   if (!response.ok || data?.status === 'error' || data?.code) {
-    throw new Error(data?.message || `Twelve Data HTTP ${response.status}`);
+    throw new Error(
+      data?.message || `Twelve Data HTTP ${response.status}`
+    );
   }
 
   const parsed = parseBatch(data, symbols);
@@ -139,13 +154,17 @@ function completedFiveMinuteCandles(series, now = Date.now()) {
 
   return values.filter(candle => {
     const time = candleTime(candle);
+
     return Number.isFinite(time) && time + FIVE_MIN_MS <= now;
   }).sort((a, b) => candleTime(b) - candleTime(a));
 }
 
-// Aggregate only complete 15m, 1h and 4h candles.
+// Build only fully completed higher-timeframe candles.
+// Input and output are ordered newest first.
 function aggregateCandles(fiveMinuteCandles, timeframe) {
-  if (timeframe.candlesPerBucket === 1) return fiveMinuteCandles;
+  if (timeframe.candlesPerBucket === 1) {
+    return fiveMinuteCandles;
+  }
 
   const buckets = new Map();
 
@@ -155,7 +174,10 @@ function aggregateCandles(fiveMinuteCandles, timeframe) {
 
     const bucketStart = Math.floor(time / timeframe.ms) * timeframe.ms;
 
-    if (!buckets.has(bucketStart)) buckets.set(bucketStart, new Map());
+    if (!buckets.has(bucketStart)) {
+      buckets.set(bucketStart, new Map());
+    }
+
     buckets.get(bucketStart).set(time, candle);
   }
 
@@ -180,7 +202,9 @@ function aggregateCandles(fiveMinuteCandles, timeframe) {
       close === null ||
       highs.some(value => value === null) ||
       lows.some(value => value === null)
-    ) continue;
+    ) {
+      continue;
+    }
 
     aggregated.push({
       datetime: new Date(bucketStart).toISOString(),
@@ -211,29 +235,45 @@ function trueRange(candle, previousClose) {
   );
 }
 
-// Calculate ATR(14) from the 14 completed candles BEFORE the current candle.
-// The candles passed to this engine are ordered newest first.
+// Calculate Wilder ATR over historical candles.
+// Input is ordered newest first; output is ATR known before candle[0].
+// The current candle is excluded from the ATR calculation.
 function calculatePriorATR(candles) {
   if (!Array.isArray(candles) || candles.length < ATR_PERIOD + 2) {
     return null;
   }
 
-  // Take 14 prior candles plus one older candle for previous-close calculations.
-  const older = candles.slice(1, ATR_PERIOD + 2).reverse();
+  const older = candles.slice(1).reverse();
   const ranges = [];
 
-  for (let i = 1; i < older.length; i++) {
-    const previousClose = toNumber(older[i - 1].close);
+  for (let i = 0; i < older.length; i++) {
+    const previousClose =
+      i > 0 ? toNumber(older[i - 1].close) : null;
+
     const range = trueRange(older[i], previousClose);
 
-    if (range === null || previousClose === null) return null;
+    if (range === null) return null;
+
     ranges.push(range);
   }
 
-  if (ranges.length !== ATR_PERIOD) return null;
+  // Match the historical test's Wilder ATR initialization.
+  if (ranges.length <= ATR_PERIOD) return null;
 
-  // The historical test uses the mean of the prior 14 true ranges.
-  return ranges.reduce((sum, value) => sum + value, 0) / ATR_PERIOD;
+  const seed = ranges.slice(1, ATR_PERIOD + 1);
+
+  if (seed.length !== ATR_PERIOD) return null;
+
+  let atr = seed.reduce((sum, value) => sum + value, 0) / ATR_PERIOD;
+
+  // Wilder smoothing for all subsequent prior candles.
+  for (let i = ATR_PERIOD + 1; i < ranges.length; i++) {
+    atr = (
+      (atr * (ATR_PERIOD - 1)) + ranges[i]
+    ) / ATR_PERIOD;
+  }
+
+  return Number.isFinite(atr) && atr > 0 ? atr : null;
 }
 
 function inspectCandles(symbol, candles, timeframeMs) {
@@ -252,18 +292,19 @@ function inspectCandles(symbol, candles, timeframeMs) {
     currentRange <= 0 ||
     open === null ||
     close === null ||
-    atr === null ||
-    atr <= 0
+    atr === null
   ) {
     return null;
   }
 
-  // Require current candle range to be at least 2x prior ATR.
+  // Require current range >= 2.0 times the prior ATR.
   const rangeRatio = currentRange / atr;
+
   if (rangeRatio < ATR_MULTIPLIER) return null;
 
-  // Require candle body to be at least 60% of the full high-low range.
+  // Require candle body >= 60% of the candle's total range.
   const bodyRatio = Math.abs(close - open) / currentRange;
+
   if (bodyRatio < MIN_BODY_RATIO) return null;
 
   const [base, quote] = symbol.split('/');
@@ -282,12 +323,12 @@ function inspectCandles(symbol, candles, timeframeMs) {
 }
 
 function scoreCurrency(currency, signals, timeframeLabel) {
-  // Activity is counted regardless of pair direction.
   const matchingPairs = signals.filter(
     signal => signal.base === currency || signal.quote === currency
   );
 
   const active = matchingPairs.length >= MIN_EXPANSION_PAIRS;
+
   const impactStars =
     matchingPairs.length >= 6 ? 3 :
     matchingPairs.length >= 3 ? 2 :
@@ -296,7 +337,8 @@ function scoreCurrency(currency, signals, timeframeLabel) {
   const impactLabel =
     impactStars === 3 ? 'High impact' :
     impactStars === 2 ? 'Moderate impact' :
-    impactStars === 1 ? 'Early activity' : 'Inactive';
+    impactStars === 1 ? 'Early activity' :
+    'Inactive';
 
   const key = `${currency}|${timeframeLabel}`;
 
@@ -308,7 +350,9 @@ function scoreCurrency(currency, signals, timeframeLabel) {
         .at(-1) || null
     : null;
 
-  if (currentActiveAt) lastActiveMemory[key] = currentActiveAt;
+  if (currentActiveAt) {
+    lastActiveMemory[key] = currentActiveAt;
+  }
 
   return {
     active,
@@ -332,7 +376,7 @@ async function executeMarketScan() {
     return { ...latestScanData, scan_status: 'scanning' };
   }
 
-  // Avoid API use when Forex is closed on Saturday/Sunday UTC.
+  // Avoid API requests when Forex is closed on weekends (UTC).
   const utcDay = new Date().getUTCDay();
 
   if (utcDay === 0 || utcDay === 6) {
@@ -367,14 +411,22 @@ async function executeMarketScan() {
   }
 
   scanInProgress = true;
-  latestScanData = { ...latestScanData, scan_status: 'scanning', error: null };
+  latestScanData = {
+    ...latestScanData,
+    scan_status: 'scanning',
+    error: null
+  };
 
   try {
     const seriesByPair = {};
 
     for (let start = 0; start < PAIRS.length; start += BATCH_SIZE) {
       const batch = PAIRS.slice(start, start + BATCH_SIZE);
-      Object.assign(seriesByPair, await fetchBatch(batch, apiKey));
+
+      Object.assign(
+        seriesByPair,
+        await fetchBatch(batch, apiKey)
+      );
 
       if (start + BATCH_SIZE < PAIRS.length) {
         await sleep(BATCH_DELAY_MS);
@@ -382,6 +434,7 @@ async function executeMarketScan() {
     }
 
     const rows = emptyCurrencyStatus();
+
     const signalsByTimeframe = Object.fromEntries(
       TIMEFRAMES.map(tf => [tf.label, []])
     );
@@ -393,7 +446,9 @@ async function executeMarketScan() {
         const candles = aggregateCandles(fiveMinute, timeframe);
         const signal = inspectCandles(pair, candles, timeframe.ms);
 
-        if (signal) signalsByTimeframe[timeframe.label].push(signal);
+        if (signal) {
+          signalsByTimeframe[timeframe.label].push(signal);
+        }
       }
     }
 
@@ -412,6 +467,7 @@ async function executeMarketScan() {
     for (const row of rows) {
       for (const timeframe of TIMEFRAMES) {
         const result = row.timeframes[timeframe.label];
+
         if (!result.active) continue;
 
         activeCurrencies.push({
@@ -437,7 +493,7 @@ async function executeMarketScan() {
       credits_estimated: PAIRS.length,
       timeframes_analysed: TIMEFRAMES.map(tf => tf.label),
       detection_settings: {
-        method: 'ATR',
+        method: 'Wilder ATR',
         atr_period: ATR_PERIOD,
         atr_multiplier: ATR_MULTIPLIER,
         min_body_ratio: MIN_BODY_RATIO
