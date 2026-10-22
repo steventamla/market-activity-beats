@@ -19,6 +19,7 @@ const MAX_HISTORY_ITEMS = 500;
 
 let previousActiveSignals = new Set();
 let scheduledScanRunning = false;
+let scanAndNotifyRunning = false;
 
 const activityHistory = [];
 
@@ -165,39 +166,49 @@ async function sendPushNotification(
 }
 
 async function runScanAndNotify() {
-  const result = await executeMarketScan();
+  // One shared lock covers scheduled and manual requests. Never start a
+  // second scan while the Twelve Data request sequence is still running.
+  if (scanAndNotifyRunning) {
+    return { ...getLatestScanData(), scan_status: 'scanning' };
+  }
 
-  if (result.scan_status !== 'success') {
-    console.error('Scan failed:', result.error || result.scan_status);
+  scanAndNotifyRunning = true;
+
+  try {
+    const result = await executeMarketScan();
+
+    if (result.scan_status !== 'success') {
+      console.error('Scan failed:', result.error || result.scan_status);
+      return result;
+    }
+
+    const activeSignals = result.active_currencies || [];
+
+    const currentActiveSignals = new Set(
+      activeSignals.map(signalKey)
+    );
+
+    // Notify once for each new qualifying impulse event.
+    const newSignals = activeSignals.filter(
+      signal => !previousActiveSignals.has(signalKey(signal))
+    );
+
+    if (newSignals.length > 0) {
+      const sent = await sendPushNotification(newSignals);
+
+      // If delivery fails, leave the previous set unchanged so the
+      // next scan can retry the notification.
+      if (!sent) return result;
+
+      recordActivity(newSignals, 'scan');
+    }
+
+    previousActiveSignals = currentActiveSignals;
+
     return result;
+  } finally {
+    scanAndNotifyRunning = false;
   }
-
-  const activeSignals = result.active_currencies || [];
-
-  const currentActiveSignals = new Set(
-    activeSignals.map(signalKey)
-  );
-
-  // Notify when a new qualifying impulse candle appears. The same candle
-  // is deduplicated, but a later impulse can alert even if the currency
-  // remained active on the previous scan.
-  const newSignals = activeSignals.filter(
-    signal => !previousActiveSignals.has(signalKey(signal))
-  );
-
-  if (newSignals.length > 0) {
-    const sent = await sendPushNotification(newSignals);
-
-    // If delivery fails, leave the previous set unchanged so the
-    // next scan can retry the notification.
-    if (!sent) return result;
-
-    recordActivity(newSignals, 'scan');
-  }
-
-  previousActiveSignals = currentActiveSignals;
-
-  return result;
 }
 
 // This endpoint intentionally starts a scan and may use API credits.
