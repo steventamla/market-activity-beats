@@ -25,8 +25,8 @@ let scanAndNotifyRunning = false;
 const activityHistory = [];
 
 app.get('/manifest.json', (req, res) => res.json({
-  name: 'Market Activity Monitor',
-  short_name: 'MarketMonitor',
+  name: 'Market Activity Finder',
+  short_name: 'MarketFinder',
   start_url: '/',
   display: 'standalone',
   background_color: '#101722',
