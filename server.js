@@ -127,36 +127,69 @@ async function sendPushNotification(
 ) {
   if (!Array.isArray(signals) || signals.length === 0) return true;
 
-  const summary = signals.map(signal =>
+  // ntfy turns oversized message bodies into attachment.txt. Keep every
+  // notification comfortably below its message-size limit so the activity
+  // remains readable directly in the notification.
+  const MAX_MESSAGE_CHARS = 3000;
+  const formatSignal = signal =>
     `Currency: ${signal.currency}\n` +
     `Timeframe: ${signal.timeframe}\n` +
     `Time ago: ${timeAgo(signal.last_active_at)}\n` +
     `Impulse bias: ${signal.direction || 'unknown'}\n` +
     `Pairs supporting: ${signal.supporting_pairs ?? 0}; opposing: ${signal.opposing_pairs ?? 0}\n` +
-    `Pairs: ${(signal.pairs || []).map(pair => pair.symbol + ' (' + pair.currency_vote + ')').join(', ') || 'none'}`
-  ).join('\n\n');
+    `Pairs: ${(signal.pairs || []).map(pair => pair.symbol + ' (' + pair.currency_vote + ')').join(', ') || 'none'}`;
+
+  const batches = [];
+  let batch = '';
+
+  for (const signal of signals) {
+    const block = formatSignal(signal);
+    const candidate = batch ? batch + '\n\n' + block : block;
+
+    if (candidate.length > MAX_MESSAGE_CHARS && batch) {
+      batches.push(batch);
+      batch = block;
+    } else {
+      batch = candidate;
+    }
+
+    // Defensive fallback in case one signal itself is unexpectedly huge.
+    if (batch.length > MAX_MESSAGE_CHARS) {
+      batches.push(batch.slice(0, MAX_MESSAGE_CHARS - 20) + '\n[Details shortened]');
+      batch = '';
+    }
+  }
+
+  if (batch) batches.push(batch);
 
   try {
-    const response = await fetch(
-      `https://ntfy.sh/${encodeURIComponent(NTFY_TOPIC)}`,
-      {
-        method: 'POST',
-        body: summary,
-        headers: {
-          Title: titlePrefix,
-          ...(NTFY_TOKEN ? { Authorization: `Bearer ${NTFY_TOKEN}` } : {}),
-          Priority: 'default',
-          Tags: 'chart'
-        }
-      }
-    );
+    for (let i = 0; i < batches.length; i++) {
+      const title = batches.length > 1
+        ? `${titlePrefix} (${i + 1}/${batches.length})`
+        : titlePrefix;
 
-    if (!response.ok) {
-      throw new Error(`Notification failed: HTTP ${response.status}`);
+      const response = await fetch(
+        `https://ntfy.sh/${encodeURIComponent(NTFY_TOPIC)}`,
+        {
+          method: 'POST',
+          body: batches[i],
+          headers: {
+            Title: title,
+            ...(NTFY_TOKEN ? { Authorization: `Bearer ${NTFY_TOKEN}` } : {}),
+            Priority: 'default',
+            Tags: 'chart',
+            'Content-Type': 'text/plain; charset=utf-8'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Notification failed: HTTP ${response.status}`);
+      }
     }
 
     console.log(
-      `Push notification sent for ${signals.length} new signal(s).`
+      `Push notification sent for ${signals.length} new signal(s) in ${batches.length} readable message(s).`
     );
 
     return true;
