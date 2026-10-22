@@ -11,8 +11,9 @@ const {
 
 app.use(express.json());
 
-const NTFY_TOPIC =
-  process.env.NTFY_TOPIC || 'market-activity-tracker-889';
+const NTFY_TOPIC = process.env.NTFY_TOPIC || 'market-activity-tracker-889';
+const NTFY_TOKEN = process.env.NTFY_TOKEN || '';
+const SCAN_TOKEN = process.env.SCAN_TOKEN || '';
 
 const SCAN_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_HISTORY_ITEMS = 500;
@@ -143,6 +144,7 @@ async function sendPushNotification(
         body: summary,
         headers: {
           Title: titlePrefix,
+          ...(NTFY_TOKEN ? { Authorization: `Bearer ${NTFY_TOKEN}` } : {}),
           Priority: 'default',
           Tags: 'chart'
         }
@@ -210,8 +212,12 @@ async function runScanAndNotify() {
   }
 }
 
-// This endpoint intentionally starts a scan and may use API credits.
+// Manual scanning can consume API credits; require a private server-side token.
 app.get('/scan', async (req, res) => {
+  if (!SCAN_TOKEN || req.get('x-scan-token') !== SCAN_TOKEN) {
+    return res.status(401).json({ scan_status: 'error', error: 'Unauthorized' });
+  }
+
   try {
     const result = await runScanAndNotify();
 
