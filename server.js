@@ -132,7 +132,6 @@ async function sendPushNotification(
     `Time ago: ${timeAgo(signal.last_active_at)}\n` +
     `Impulse bias: ${signal.direction || 'unknown'}\n` +
     `Pairs supporting: ${signal.supporting_pairs ?? 0}; opposing: ${signal.opposing_pairs ?? 0}\n` +
-    `Impulse length: ${Math.max(1, ...((signal.pairs || []).map(pair => pair.impulse_candles || 1)))} candle(s)\n` +
     `Pairs: ${(signal.pairs || []).map(pair => pair.symbol + ' (' + pair.currency_vote + ')').join(', ') || 'none'}`
   ).join('\n\n');
 
