@@ -28,7 +28,9 @@ const ATR_MULTIPLIER = 2.0;
 const MIN_BODY_RATIO = 0.60;
 
 const MIN_EXPANSION_PAIRS = 1; // Preserve one-pair early detection.
-const BATCH_SIZE = 7;
+// Four symbols per request stays below the free plan's 8 credits/minute
+// when requests are separated by the 61-second delay below.
+const BATCH_SIZE = 4;
 const BATCH_DELAY_MS = 61000;
 const OUTPUT_SIZE = 1200;
 const FIVE_MIN_MS = 5 * 60 * 1000;
