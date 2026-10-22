@@ -280,9 +280,6 @@ function inspectCandles(symbol, candles, timeframeMs) {
   }
 
   const current = candles[0];
-  const atr = calculatePriorATR(candles);
-
-  if (atr === null) return null;
 
   // An impulse may form across one candle or several consecutive candles.
   // Test the shortest qualifying run first, up to six candles. A run must
@@ -296,6 +293,12 @@ function inspectCandles(symbol, candles, timeframeMs) {
     const run = candles.slice(0, count); // newest first
 
     if (run.length !== count) break;
+
+    // Measure the impulse against volatility that existed before this run,
+    // not ATR already inflated by candles inside the impulse itself.
+    const priorCandles = candles.slice(count);
+    const atr = calculatePriorATR(priorCandles);
+    if (atr === null) continue;
 
     const oldest = run[run.length - 1];
     const oldestOpen = toNumber(oldest.open);
