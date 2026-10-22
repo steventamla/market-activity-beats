@@ -23,9 +23,15 @@ const PAIRS = [
 ];
 
 // Final candidate settings from the historical threshold test.
-const ATR_PERIOD = 14;
-const ATR_MULTIPLIER = 2.0;
+const ATR_PERIOD = Number.parseInt(process.env.ATR_PERIOD || '14', 10);
+const ATR_MULTIPLIER = Number(process.env.ATR_MULTIPLIER || '2.0');
 const MIN_BODY_RATIO = 0.60;
+if (!Number.isInteger(ATR_PERIOD) || ATR_PERIOD < 2) {
+  throw new Error('ATR_PERIOD must be an integer of at least 2.');
+}
+if (!Number.isFinite(ATR_MULTIPLIER) || ATR_MULTIPLIER <= 0) {
+  throw new Error('ATR_MULTIPLIER must be a positive number.');
+}
 
 const MIN_EXPANSION_PAIRS = 1; // Preserve one-pair early detection.
 // Four symbols per request stays below the free plan's 8 credits/minute
@@ -288,7 +294,7 @@ function inspectCandles(symbol, candles, timeframeMs) {
   // make a large net directional move relative to prior ATR and show enough
   // directional efficiency to avoid counting choppy back-and-forth movement.
   const MAX_IMPULSE_CANDLES = 24;
-  const MIN_NET_MOVE_ATR = 2.0;
+  const MIN_NET_MOVE_ATR = ATR_MULTIPLIER;
   const MIN_DIRECTIONAL_EFFICIENCY = 0.60;
 
   for (let count = 1; count <= MAX_IMPULSE_CANDLES; count++) {
