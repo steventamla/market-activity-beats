@@ -3,7 +3,7 @@
  * Historical Threshold Test
  * Node.js 18+
  *
- * Tests thresholds using historical Twelve Data candles.
+ * Tests thresholds using historical Twelve Data candles with Wilder ATR.
  * Does not modify the live scanner.
  *
  * Required environment variable:
@@ -212,50 +212,59 @@ function aggregateCandles(candles, timeframe) {
   return result.sort((a, b) => candleTime(a) - candleTime(b));
 }
 
+function trueRange(candles, index) {
+  const current = candles[index];
+  const high = number(current.high);
+  const low = number(current.low);
+  if (high === null || low === null || high < low) return null;
+  if (index === 0) return high - low;
+  const previousClose = number(candles[index - 1].close);
+  if (previousClose === null) return null;
+  return Math.max(high - low, Math.abs(high - previousClose), Math.abs(low - previousClose));
+}
+
+// Wilder ATR: simple-average seed followed by Wilder's recursive smoothing.
+function calculateWilderATR(candles, period = BASELINE) {
+  const ranges = candles.map((_, index) => trueRange(candles, index));
+  const atr = new Array(candles.length).fill(null);
+  if (candles.length <= period) return atr;
+  const seed = ranges.slice(1, period + 1);
+  if (seed.some(value => value === null)) return atr;
+  let value = seed.reduce((sum, item) => sum + item, 0) / period;
+  atr[period] = value;
+  for (let index = period + 1; index < candles.length; index++) {
+    if (ranges[index] === null) {
+      value = null;
+      continue;
+    }
+    if (value === null) {
+      const window = ranges.slice(index - period + 1, index + 1);
+      if (window.length !== period || window.some(item => item === null)) continue;
+      value = window.reduce((sum, item) => sum + item, 0) / period;
+    } else {
+      value = ((value * (period - 1)) + ranges[index]) / period;
+    }
+    atr[index] = value;
+  }
+  return atr;
+}
+
 function testThreshold(candles, threshold) {
+  const atr = calculateWilderATR(candles, BASELINE);
   let eligible = 0;
   let rangeSignals = 0;
   let bodySignals = 0;
-
-  for (let index = BASELINE; index < candles.length; index++) {
+  for (let index = BASELINE + 1; index < candles.length; index++) {
     const current = candles[index];
     const currentRange = candleRange(current);
-
-    const previousRanges = candles
-      .slice(index - BASELINE, index)
-      .map(candleRange);
-
-    if (
-      currentRange === null ||
-      previousRanges.some(value => value === null)
-    ) {
-      continue;
-    }
-
-    const average =
-      previousRanges.reduce((sum, value) => sum + value, 0) /
-      previousRanges.length;
-
-    if (average <= 0) continue;
-
+    const priorATR = atr[index - 1];
+    if (currentRange === null || priorATR === null || priorATR === undefined || !Number.isFinite(priorATR) || priorATR <= 0) continue;
     eligible++;
-
-    if (currentRange < threshold * average) continue;
-
+    if (currentRange < threshold * priorATR) continue;
     rangeSignals++;
-
-    const body = Math.abs(
-      number(current.close) - number(current.open)
-    );
-
-    if (
-      currentRange > 0 &&
-      body / currentRange >= BODY_RATIO_MIN
-    ) {
-      bodySignals++;
-    }
+    const body = Math.abs(number(current.close) - number(current.open));
+    if (currentRange > 0 && body / currentRange >= BODY_RATIO_MIN) bodySignals++;
   }
-
   return { eligible, rangeSignals, bodySignals };
 }
 
