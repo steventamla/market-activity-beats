@@ -76,31 +76,21 @@ function signalKey(signal) {
   return `${signal.currency}|${signal.timeframe}|${impulseCandles}`;
 }
 
-function timeAgo(value) {
-  if (!value) return 'Time unknown';
+function activityTime(value) {
+  if (!value) return 'Unknown';
 
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return 'Time unknown';
+  const timestamp = new Date(value);
+  if (!Number.isFinite(timestamp.getTime())) return 'Unknown';
 
-  const minutes = Math.max(
-    0,
-    Math.floor((Date.now() - timestamp) / 60000)
-  );
-
-  if (minutes < 1) return 'Just now';
-
-  if (minutes < 60) {
-    return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-
-  if (hours < 24) {
-    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-  }
-
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Dar_es_Salaam',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(timestamp);
 }
 
 function recordActivity(signals, source = 'scan') {
@@ -121,23 +111,16 @@ function recordActivity(signals, source = 'scan') {
   }
 }
 
-async function sendPushNotification(
-  signals,
-  titlePrefix = 'Market Activity Detected'
-) {
+async function sendPushNotification(signals, titlePrefix = 'Market Activity Finder') {
   if (!Array.isArray(signals) || signals.length === 0) return true;
 
-  // ntfy turns oversized message bodies into attachment.txt. Keep every
-  // notification comfortably below its message-size limit so the activity
-  // remains readable directly in the notification.
+  // Notifications intentionally contain only the three requested fields.
+  // Keep batches small so ntfy displays plain text instead of attachments.
   const MAX_MESSAGE_CHARS = 3000;
   const formatSignal = signal =>
-    `Currency: ${signal.currency}\n` +
     `Timeframe: ${signal.timeframe}\n` +
-    `Time ago: ${timeAgo(signal.last_active_at)}\n` +
-    `Impulse bias: ${signal.direction || 'unknown'}\n` +
-    `Pairs supporting: ${signal.supporting_pairs ?? 0}; opposing: ${signal.opposing_pairs ?? 0}\n` +
-    `Pairs: ${(signal.pairs || []).map(pair => pair.symbol + ' (' + pair.currency_vote + ')').join(', ') || 'none'}`;
+    `Time: ${activityTime(signal.last_active_at)}\n` +
+    `Currency: ${signal.currency}`;
 
   const batches = [];
   let batch = '';
@@ -151,12 +134,6 @@ async function sendPushNotification(
       batch = block;
     } else {
       batch = candidate;
-    }
-
-    // Defensive fallback in case one signal itself is unexpectedly huge.
-    if (batch.length > MAX_MESSAGE_CHARS) {
-      batches.push(batch.slice(0, MAX_MESSAGE_CHARS - 20) + '\n[Details shortened]');
-      batch = '';
     }
   }
 
@@ -183,15 +160,10 @@ async function sendPushNotification(
         }
       );
 
-      if (!response.ok) {
-        throw new Error(`Notification failed: HTTP ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Notification failed: HTTP ${response.status}`);
     }
 
-    console.log(
-      `Push notification sent for ${signals.length} new signal(s) in ${batches.length} readable message(s).`
-    );
-
+    console.log(`Market Activity Finder sent ${signals.length} activity item(s) in ${batches.length} message(s).`);
     return true;
   } catch (error) {
     console.error('Push notification failed:', error.message);
