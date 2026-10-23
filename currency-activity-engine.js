@@ -33,8 +33,10 @@ if (!Number.isFinite(ATR_MULTIPLIER) || ATR_MULTIPLIER <= 0) {
   throw new Error('ATR_MULTIPLIER must be a positive number.');
 }
 
-const MIN_EXPANSION_PAIRS = 3;
-const MIN_PAIR_AGREEMENT = 0.75;
+// A currency/timeframe is active only when at least six of its seven pairs
+// have a qualifying activity signal. Directional agreement is reported, but
+// it does not replace the six-pair activity requirement.
+const MIN_EXPANSION_PAIRS = 6;
 // Four symbols per request stays below the free plan's 8 credits/minute
 // when requests are separated by the 61-second delay below.
 const BATCH_SIZE = 4;
@@ -379,9 +381,7 @@ function scoreCurrency(currency, signals, timeframeLabel) {
   const strengthScore = votes.reduce((sum, item) => sum + item.vote, 0);
   const supportingPairs = votes.filter(item => item.vote === Math.sign(strengthScore)).length;
   const opposingPairs = votes.length - supportingPairs;
-  const active = matchingPairs.length >= MIN_EXPANSION_PAIRS &&
-    strengthScore !== 0 &&
-    Math.max(supportingPairs, opposingPairs) / matchingPairs.length >= MIN_PAIR_AGREEMENT;
+  const active = matchingPairs.length >= MIN_EXPANSION_PAIRS;
   const agreement = matchingPairs.length === 0 ? 'inactive'
     : matchingPairs.length === 1 ? 'early'
     : strengthScore === 0 ? 'conflicting'
