@@ -9,9 +9,8 @@ const {
   getLatestScanData
 } = require('./currency-activity-engine.js');
 
-app.use(express.json());
 
-const NTFY_TOPIC = process.env.NTFY_TOPIC || 'market-activity-tracker-889';
+const NTFY_TOPIC = process.env.NTFY_TOPIC || '';
 const NTFY_TOKEN = process.env.NTFY_TOKEN || '';
 const SCAN_TOKEN = process.env.SCAN_TOKEN || '';
 
@@ -19,6 +18,7 @@ const SCAN_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_HISTORY_ITEMS = 500;
 
 let previousActiveSignals = new Set();
+const recordedHistoryKeys = new Set();
 let scheduledScanRunning = false;
 let scanAndNotifyRunning = false;
 
@@ -61,7 +61,7 @@ app.get('/latest-scan', (req, res) => {
 
 app.get('/activity-history', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ items: activityHistory });
+  res.json({ items: activityHistory.slice(0, 50), total: activityHistory.length });
 });
 
 function signalKey(signal) {
@@ -97,6 +97,9 @@ function recordActivity(signals, source = 'scan') {
   const detectedAt = new Date().toISOString();
 
   for (const signal of signals || []) {
+    const key = signalKey(signal);
+    if (recordedHistoryKeys.has(key)) continue;
+    recordedHistoryKeys.add(key);
     activityHistory.unshift({
       currency: signal.currency,
       timeframe: signal.timeframe,
@@ -113,6 +116,10 @@ function recordActivity(signals, source = 'scan') {
 
 async function sendPushNotification(signals, titlePrefix = 'Market Activity Finder') {
   if (!Array.isArray(signals) || signals.length === 0) return true;
+  if (!NTFY_TOPIC) {
+    console.error('Push notification skipped: NTFY_TOPIC is not configured.');
+    return false;
+  }
 
   // Notifications intentionally contain only the three requested fields.
   // Keep batches small so ntfy displays plain text instead of attachments.
@@ -200,13 +207,14 @@ async function runScanAndNotify() {
     );
 
     if (newSignals.length > 0) {
+      // Record the event independently of push delivery. History keys prevent
+      // duplicate history rows if ntfy fails and delivery is retried next scan.
+      recordActivity(newSignals, 'scan');
       const sent = await sendPushNotification(newSignals);
 
       // If delivery fails, leave the previous set unchanged so the
       // next scan can retry the notification.
       if (!sent) return result;
-
-      recordActivity(newSignals, 'scan');
     }
 
     previousActiveSignals = currentActiveSignals;
@@ -217,11 +225,19 @@ async function runScanAndNotify() {
   }
 }
 
-// Manual scanning can consume API credits; require a private server-side token.
-app.get('/scan', async (req, res) => {
-  if (!SCAN_TOKEN || req.get('x-scan-token') !== SCAN_TOKEN) {
-    return res.status(401).json({ scan_status: 'error', error: 'Unauthorized' });
+// Protect endpoints that can trigger scans or send notifications.
+function requireScanToken(req, res, next) {
+  const token = req.get('x-scan-token');
+  if (!SCAN_TOKEN || token !== SCAN_TOKEN) {
+    return res.status(401).json({
+      status: 'unauthorized',
+      message: 'Valid scan token required.'
+    });
   }
+  next();
+}
+
+app.get('/scan', requireScanToken, async (req, res) => {
 
   try {
     const result = await runScanAndNotify();
@@ -240,7 +256,7 @@ app.get('/scan', async (req, res) => {
 
 // Sends saved active signals only. It does not start a scan or alter
 // the notification deduplication baseline.
-app.get('/test-real-signal', async (req, res) => {
+app.get('/test-real-signal', requireScanToken, async (req, res) => {
   const result = getLatestScanData();
 
   const signals =
@@ -268,7 +284,7 @@ app.get('/test-real-signal', async (req, res) => {
   });
 });
 
-app.get('/test-push', async (req, res) => {
+app.get('/test-push', requireScanToken, async (req, res) => {
   const sent = await sendPushNotification([{
     currency: 'TEST',
     timeframe: '15m',
