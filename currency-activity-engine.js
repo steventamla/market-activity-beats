@@ -367,18 +367,6 @@ function scoreCurrency(currency, signals, timeframeLabel) {
     signal => signal.base === currency || signal.quote === currency
   );
 
-  const active = matchingPairs.length >= MIN_EXPANSION_PAIRS &&
-    (matchingPairs.length > 0
-      ? Math.max(
-          matchingPairs.filter(signal => (signal.base === currency
-            ? (signal.direction === 'bullish' ? 1 : -1)
-            : (signal.direction === 'bullish' ? -1 : 1)) === Math.sign(strengthScore)).length,
-          matchingPairs.length - matchingPairs.filter(signal => (signal.base === currency
-            ? (signal.direction === 'bullish' ? 1 : -1)
-            : (signal.direction === 'bullish' ? -1 : 1)) === Math.sign(strengthScore)).length
-        ) / matchingPairs.length >= MIN_PAIR_AGREEMENT
-      : false);
-
   // A bullish base/quote pair supports base strength and quote weakness;
   // a bearish pair supports base weakness and quote strength.
   const votes = matchingPairs.map(signal => ({
@@ -391,6 +379,9 @@ function scoreCurrency(currency, signals, timeframeLabel) {
   const strengthScore = votes.reduce((sum, item) => sum + item.vote, 0);
   const supportingPairs = votes.filter(item => item.vote === Math.sign(strengthScore)).length;
   const opposingPairs = votes.length - supportingPairs;
+  const active = matchingPairs.length >= MIN_EXPANSION_PAIRS &&
+    strengthScore !== 0 &&
+    Math.max(supportingPairs, opposingPairs) / matchingPairs.length >= MIN_PAIR_AGREEMENT;
   const agreement = matchingPairs.length === 0 ? 'inactive'
     : matchingPairs.length === 1 ? 'early'
     : strengthScore === 0 ? 'conflicting'
