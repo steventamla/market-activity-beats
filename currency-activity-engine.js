@@ -24,8 +24,8 @@ const PAIRS = [
 
 // Final candidate settings from the historical threshold test.
 const ATR_PERIOD = Number.parseInt(process.env.ATR_PERIOD || '14', 10);
-const ATR_MULTIPLIER = Number(process.env.ATR_MULTIPLIER || '2.0');
-const MIN_BODY_RATIO = 0.60;
+const ATR_MULTIPLIER = Number(process.env.ATR_MULTIPLIER || '2.5');
+const MIN_BODY_RATIO = 0.70;
 if (!Number.isInteger(ATR_PERIOD) || ATR_PERIOD < 2) {
   throw new Error('ATR_PERIOD must be an integer of at least 2.');
 }
@@ -33,7 +33,8 @@ if (!Number.isFinite(ATR_MULTIPLIER) || ATR_MULTIPLIER <= 0) {
   throw new Error('ATR_MULTIPLIER must be a positive number.');
 }
 
-const MIN_EXPANSION_PAIRS = 1; // Preserve one-pair early detection.
+const MIN_EXPANSION_PAIRS = 3;
+const MIN_PAIR_AGREEMENT = 0.75;
 // Four symbols per request stays below the free plan's 8 credits/minute
 // when requests are separated by the 61-second delay below.
 const BATCH_SIZE = 4;
@@ -293,9 +294,9 @@ function inspectCandles(symbol, candles, timeframeMs) {
   // Test the shortest qualifying run first, up to six candles. A run must
   // make a large net directional move relative to prior ATR and show enough
   // directional efficiency to avoid counting choppy back-and-forth movement.
-  const MAX_IMPULSE_CANDLES = 24;
+  const MAX_IMPULSE_CANDLES = 6;
   const MIN_NET_MOVE_ATR = ATR_MULTIPLIER;
-  const MIN_DIRECTIONAL_EFFICIENCY = 0.60;
+  const MIN_DIRECTIONAL_EFFICIENCY = MIN_BODY_RATIO;
 
   for (let count = 1; count <= MAX_IMPULSE_CANDLES; count++) {
     const run = candles.slice(0, count); // newest first
@@ -366,7 +367,17 @@ function scoreCurrency(currency, signals, timeframeLabel) {
     signal => signal.base === currency || signal.quote === currency
   );
 
-  const active = matchingPairs.length >= MIN_EXPANSION_PAIRS;
+  const active = matchingPairs.length >= MIN_EXPANSION_PAIRS &&
+    (matchingPairs.length > 0
+      ? Math.max(
+          matchingPairs.filter(signal => (signal.base === currency
+            ? (signal.direction === 'bullish' ? 1 : -1)
+            : (signal.direction === 'bullish' ? -1 : 1)) === Math.sign(strengthScore)).length,
+          matchingPairs.length - matchingPairs.filter(signal => (signal.base === currency
+            ? (signal.direction === 'bullish' ? 1 : -1)
+            : (signal.direction === 'bullish' ? -1 : 1)) === Math.sign(strengthScore)).length
+        ) / matchingPairs.length >= MIN_PAIR_AGREEMENT
+      : false);
 
   // A bullish base/quote pair supports base strength and quote weakness;
   // a bearish pair supports base weakness and quote strength.
@@ -573,8 +584,8 @@ async function executeMarketScan() {
         atr_multiplier: ATR_MULTIPLIER,
         min_body_ratio: MIN_BODY_RATIO,
         impulse_detection: 'consecutive-candle net displacement',
-        max_impulse_candles: 24,
-        min_directional_efficiency: 0.60
+        max_impulse_candles: 6,
+        min_directional_efficiency: MIN_BODY_RATIO
       }
     };
   } catch (error) {
