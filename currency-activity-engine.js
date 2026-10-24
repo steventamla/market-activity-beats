@@ -4,6 +4,7 @@
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'];
 
 const TIMEFRAMES = [
+  { label: '3m', ms: 3 * 60 * 1000, candlesPerBucket: 3, source: '1m' },
   { label: '5m', ms: 5 * 60 * 1000, candlesPerBucket: 1 },
   { label: '15m', ms: 15 * 60 * 1000, candlesPerBucket: 3 },
   { label: '1h', ms: 60 * 60 * 1000, candlesPerBucket: 12 },
@@ -42,6 +43,7 @@ const MIN_EXPANSION_PAIRS = 6;
 const BATCH_SIZE = 4;
 const BATCH_DELAY_MS = 61000;
 const OUTPUT_SIZE = 1200;
+const ONE_MIN_MS = 60 * 1000;
 const FIVE_MIN_MS = 5 * 60 * 1000;
 
 let scanInProgress = false;
@@ -132,12 +134,12 @@ function parseBatch(data, symbols) {
   return result;
 }
 
-async function fetchBatch(symbols, apiKey) {
+async function fetchBatch(symbols, apiKey, interval = '5min', outputSize = OUTPUT_SIZE) {
   const url = new URL('https://api.twelvedata.com/time_series');
 
   url.searchParams.set('symbol', symbols.join(','));
-  url.searchParams.set('interval', '5min');
-  url.searchParams.set('outputsize', String(OUTPUT_SIZE));
+  url.searchParams.set('interval', interval);
+  url.searchParams.set('outputsize', String(outputSize));
   url.searchParams.set('timezone', 'UTC');
   url.searchParams.set('apikey', apiKey);
 
@@ -160,20 +162,24 @@ async function fetchBatch(symbols, apiKey) {
   return parsed;
 }
 
-function completedFiveMinuteCandles(series, now = Date.now()) {
+function completedCandles(series, intervalMs, now = Date.now()) {
   const values = Array.isArray(series?.values) ? series.values : [];
 
   return values.filter(candle => {
     const time = candleTime(candle);
 
-    return Number.isFinite(time) && time + FIVE_MIN_MS <= now;
+    return Number.isFinite(time) && time + intervalMs <= now;
   }).sort((a, b) => candleTime(b) - candleTime(a));
+}
+
+function completedFiveMinuteCandles(series, now = Date.now()) {
+  return completedCandles(series, FIVE_MIN_MS, now);
 }
 
 // Build only fully completed higher-timeframe candles.
 // Input and output are ordered newest first.
-function aggregateCandles(fiveMinuteCandles, timeframe) {
-  if (timeframe.candlesPerBucket === 1) {
+function aggregateCandles(fiveMinuteCandles, timeframe, sourceIntervalMs = FIVE_MIN_MS) {
+  if (sourceIntervalMs === timeframe.ms && timeframe.candlesPerBucket === 1) {
     return fiveMinuteCandles;
   }
 
@@ -197,7 +203,7 @@ function aggregateCandles(fiveMinuteCandles, timeframe) {
   for (const [bucketStart, items] of buckets.entries()) {
     const expected = Array.from(
       { length: timeframe.candlesPerBucket },
-      (_, i) => bucketStart + i * FIVE_MIN_MS
+      (_, i) => bucketStart + i * sourceIntervalMs
     );
 
     if (!expected.every(time => items.has(time))) continue;
@@ -491,14 +497,18 @@ async function executeMarketScan() {
 
   try {
     const seriesByPair = {};
+    const seriesByPairOneMinute = {};
 
     for (let start = 0; start < PAIRS.length; start += BATCH_SIZE) {
       const batch = PAIRS.slice(start, start + BATCH_SIZE);
 
-      Object.assign(
-        seriesByPair,
-        await fetchBatch(batch, apiKey)
-      );
+      const [fiveMinuteBatch, oneMinuteBatch] = await Promise.all([
+        fetchBatch(batch, apiKey, '5min', OUTPUT_SIZE),
+        fetchBatch(batch, apiKey, '1min', OUTPUT_SIZE)
+      ]);
+
+      Object.assign(seriesByPair, fiveMinuteBatch);
+      Object.assign(seriesByPairOneMinute, oneMinuteBatch);
 
       if (start + BATCH_SIZE < PAIRS.length) {
         await sleep(BATCH_DELAY_MS);
@@ -513,9 +523,12 @@ async function executeMarketScan() {
 
     for (const pair of PAIRS) {
       const fiveMinute = completedFiveMinuteCandles(seriesByPair[pair]);
+      const oneMinute = completedCandles(seriesByPairOneMinute[pair], ONE_MIN_MS);
 
       for (const timeframe of TIMEFRAMES) {
-        const candles = aggregateCandles(fiveMinute, timeframe);
+        const candles = timeframe.source === '1m'
+          ? aggregateCandles(oneMinute, timeframe, ONE_MIN_MS)
+          : aggregateCandles(fiveMinute, timeframe);
         const signal = inspectCandles(pair, candles, timeframe.ms);
 
         if (signal) {
