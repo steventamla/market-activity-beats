@@ -35,7 +35,7 @@
   <section class="top">
     <div>
       <h1>Market Activity Finder</h1>
-      <div class="muted">Currency activity across 5-minute, 15-minute, 1-hour and 4-hour timeframes</div>
+      <div class="muted">Currency activity across 3-minute, 5-minute, 15-minute, 1-hour and 4-hour timeframes</div>
     </div>
     <span class="pill">5-minute scan cycle</span>
   </section>
@@ -43,15 +43,15 @@
     <div class="stat"><span class="muted">Scanner status</span><strong id="status">Waiting</strong></div>
     <div class="stat"><span class="muted">Active signals</span><strong id="signals">—</strong></div>
     <div class="stat"><span class="muted">Last scan</span><strong id="scanTime" style="font-size:15px">Not yet scanned</strong></div>
-    <div class="stat"><span class="muted">Timeframes analysed</span><strong style="font-size:16px">5m · 15m · 1h · 4h</strong></div>
+    <div class="stat"><span class="muted">Timeframes analysed</span><strong style="font-size:16px">3m · 5m · 15m · 1h · 4h</strong></div>
   </section>
   <section class="panel">
     <h2>Currency activity</h2>
     <div class="muted">Shows active currencies and the breadth of pair activity on each timeframe. ★ = 1–2 affected pairs, ★★ = 3–5, ★★★ = 6–7. Activity only: no direction, rankings or trade decisions.</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Currency</th><th>5 minutes</th><th>15 minutes</th><th>1 hour</th><th>4 hours</th></tr></thead>
-        <tbody id="currencyRows"><tr><td colspan="5">Loading latest results…</td></tr></tbody>
+        <thead><tr><th>Currency</th><th>3 minutes</th><th>5 minutes</th><th>15 minutes</th><th>1 hour</th><th>4 hours</th></tr></thead>
+        <tbody id="currencyRows"><tr><td colspan="6">Loading latest results…</td></tr></tbody>
       </table>
     </div>
     <div id="message" class="message">Connecting to the scanner…</div>
@@ -61,7 +61,7 @@
     <div class="table-wrap">
       <table>
         <thead><tr><th>Currency</th><th>Timeframe</th><th>Impact</th><th>Pairs affected</th><th>Last active</th></tr></thead>
-        <tbody id="signalRows"><tr><td colspan="3">No results loaded yet.</td></tr></tbody>
+        <tbody id="signalRows"><tr><td colspan="5">No results loaded yet.</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -79,8 +79,8 @@
 </main>
 <script>
   const currencies = ['USD','EUR','GBP','JPY','CHF','AUD','CAD','NZD'];
-  const timeframeOrder = ['5m','15m','1h','4h'];
-  const timeframeNames = { '5m': '5 minutes', '15m': '15 minutes', '1h': '1 hour', '4h': '4 hours' };
+  const timeframeOrder = ['3m','5m','15m','1h','4h'];
+  const timeframeNames = { '3m': '3 minutes', '5m': '5 minutes', '15m': '15 minutes', '1h': '1 hour', '4h': '4 hours' };
   function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
   }
