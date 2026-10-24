@@ -4,7 +4,6 @@
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'];
 
 const TIMEFRAMES = [
-  { label: '3m', ms: 3 * 60 * 1000, candlesPerBucket: 3, source: '1m' },
   { label: '5m', ms: 5 * 60 * 1000, candlesPerBucket: 1 },
   { label: '15m', ms: 15 * 60 * 1000, candlesPerBucket: 3 },
   { label: '1h', ms: 60 * 60 * 1000, candlesPerBucket: 12 },
@@ -43,7 +42,6 @@ const MIN_EXPANSION_PAIRS = 6;
 const BATCH_SIZE = 4;
 const BATCH_DELAY_MS = 61000;
 const OUTPUT_SIZE = 1200;
-const ONE_MIN_MS = 60 * 1000;
 const FIVE_MIN_MS = 5 * 60 * 1000;
 
 let scanInProgress = false;
@@ -497,18 +495,13 @@ async function executeMarketScan() {
 
   try {
     const seriesByPair = {};
-    const seriesByPairOneMinute = {};
 
     for (let start = 0; start < PAIRS.length; start += BATCH_SIZE) {
       const batch = PAIRS.slice(start, start + BATCH_SIZE);
 
-      const [fiveMinuteBatch, oneMinuteBatch] = await Promise.all([
-        fetchBatch(batch, apiKey, '5min', OUTPUT_SIZE),
-        fetchBatch(batch, apiKey, '1min', OUTPUT_SIZE)
-      ]);
+      const fiveMinuteBatch = await fetchBatch(batch, apiKey, '5min', OUTPUT_SIZE);
 
       Object.assign(seriesByPair, fiveMinuteBatch);
-      Object.assign(seriesByPairOneMinute, oneMinuteBatch);
 
       if (start + BATCH_SIZE < PAIRS.length) {
         await sleep(BATCH_DELAY_MS);
@@ -523,12 +516,8 @@ async function executeMarketScan() {
 
     for (const pair of PAIRS) {
       const fiveMinute = completedFiveMinuteCandles(seriesByPair[pair]);
-      const oneMinute = completedCandles(seriesByPairOneMinute[pair], ONE_MIN_MS);
-
       for (const timeframe of TIMEFRAMES) {
-        const candles = timeframe.source === '1m'
-          ? aggregateCandles(oneMinute, timeframe, ONE_MIN_MS)
-          : aggregateCandles(fiveMinute, timeframe);
+        const candles = aggregateCandles(fiveMinute, timeframe);
         const signal = inspectCandles(pair, candles, timeframe.ms);
 
         if (signal) {
