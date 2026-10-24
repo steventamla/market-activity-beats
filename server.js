@@ -326,7 +326,7 @@ async function scheduledScan() {
 
     console.log(
       '[SCHEDULE] Next scan scheduled in 5 minutes. ' +
-      'One scan analyses all five timeframes.'
+      'One scan analyses all four timeframes.'
     );
 
     setTimeout(scheduledScan, SCAN_INTERVAL_MS);
