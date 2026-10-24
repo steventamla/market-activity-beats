@@ -580,7 +580,7 @@ async function executeMarketScan() {
       active_signals_count: activeCurrencies.length,
       active_currencies: activeCurrencies,
       currency_status: rows,
-      credits_estimated: PAIRS.length,
+      credits_estimated: PAIRS.length * 2,
       timeframes_analysed: TIMEFRAMES.map(tf => tf.label),
       detection_settings: {
         method: 'Wilder ATR',
