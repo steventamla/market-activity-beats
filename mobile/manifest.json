@@ -1,0 +1,14 @@
+{
+  "name": "Market Activity Finder",
+  "short_name": "Market Activity",
+  "description": "Mobile dashboard for currently active currencies and timeframes.",
+  "start_url": "/mobile/",
+  "scope": "/mobile/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101722",
+  "theme_color": "#101722",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
