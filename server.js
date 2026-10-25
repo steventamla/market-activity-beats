@@ -24,6 +24,9 @@ let scanAndNotifyRunning = false;
 
 const activityHistory = [];
 
+// Serve the separate installable mobile dashboard without changing scanner logic.
+app.use('/mobile', express.static(path.join(__dirname, 'mobile'), { extensions: ['html'] }));
+
 app.get('/manifest.json', (req, res) => res.json({
   name: 'Market Activity Finder',
   short_name: 'MarketFinder',
