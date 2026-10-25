@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101722">
+<meta name="description" content="Mobile view of the Market Activity Finder.">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<title>Market Activity Finder</title>
+<style>
+:root{color-scheme:dark;--bg:#101722;--panel:#192434;--panel2:#202e42;--line:#2b3a4e;--muted:#9baabd;--text:#edf4ff;--mint:#50dfa1;--cyan:#45d9ff;--violet:#a78bfa;--amber:#ffc857;--pink:#ff7ca8}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 10% 0%,#163b4b 0,transparent 38%),radial-gradient(ellipse at 100% 10%,#32245c 0,transparent 32%),var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+main{width:min(100%,760px);margin:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px;border:1px solid #35465e;border-radius:20px;background:linear-gradient(130deg,#1a3042f2,#22233df2);box-shadow:0 14px 34px #0003;margin-bottom:14px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}.logo{width:44px;height:44px;flex:0 0 44px;border-radius:14px;background:linear-gradient(135deg,#39dfb1,#3489ff 60%,#9b70ff);display:grid;place-items:center;box-shadow:0 0 24px #45d9ff30}.logo svg{width:26px;height:26px}h1{font-size:clamp(19px,5vw,25px);letter-spacing:-.6px;line-height:1.15;margin:0 0 5px}.sub{font-size:12px;color:#b6c7db}.refresh{border:1px solid #47617d;background:#273952;color:#fff;border-radius:12px;padding:10px 12px;font-weight:700;cursor:pointer}.refresh:active{transform:scale(.97)}
+.statusline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 3px 13px;font-size:12px;color:var(--muted)}.live{display:inline-flex;align-items:center;gap:7px;color:var(--mint);font-weight:750;letter-spacing:.4px}.pulse{width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 12px #50dfa1;animation:pulse 1.7s infinite}@keyframes pulse{50%{opacity:.45;box-shadow:0 0 3px #50dfa1}}
+#signals{display:grid;gap:12px}.signal{position:relative;overflow:hidden;border:1px solid #34465f;border-radius:18px;background:linear-gradient(145deg,#1c2b40f5,#151f30f7);padding:17px;box-shadow:0 10px 25px #0002;animation:rise .25s ease both}.signal:before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:linear-gradient(180deg,var(--mint),var(--cyan),var(--violet))}.signalhead{display:flex;align-items:center;justify-content:space-between;gap:10px}.currency{font-size:25px;font-weight:850;letter-spacing:.6px}.activepill{border:1px solid #32866d;background:#153e35;color:#72f0b7;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:800;letter-spacing:.6px}.frames{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.frame{flex:1 1 90px;min-width:0;border:1px solid #35465e;background:#111c2b;border-radius:12px;padding:10px 11px}.frame small{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}.frame strong{display:block;color:var(--cyan);font-size:14px}.frame .when{font-size:12px;color:#dce8f7;font-weight:650;overflow-wrap:anywhere}.empty,.error{border:1px solid #34465f;border-radius:18px;background:linear-gradient(145deg,#1c2b40f5,#151f30f7);padding:30px 20px;text-align:center}.emptyicon{width:52px;height:52px;border-radius:17px;margin:0 auto 13px;display:grid;place-items:center;background:#23374c;color:var(--cyan);font-size:25px}.empty h2{font-size:18px;margin:0 0 6px}.empty p,.error p{font-size:13px;color:var(--muted);margin:0}.error{border-color:#87525e;color:#ffb4c3}.foot{text-align:center;color:#8092a9;font-size:11px;padding:16px 8px 0}.foot span{color:#a8bdd4}@keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(min-width:600px){main{padding-top:24px}.signal{padding:20px}.frames{gap:10px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<header>
+ <div class="brand">
+  <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17.5 8.2 12l3.5 3.2L20.8 5" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.5 5h5.3v5.3" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div><h1>Market Activity</h1><div class="sub">Live currency activity monitor</div></div>
+ </div>
+ <button class="refresh" id="refresh" type="button" aria-label="Refresh activity">↻ Refresh</button>
+</header>
+<div class="statusline"><span class="live"><i class="pulse"></i><span id="state">CONNECTING</span></span><span id="updated">Waiting for scan</span></div>
+<section id="signals" aria-live="polite"><div class="empty"><div class="emptyicon">⌁</div><h2>Checking activity</h2><p>Waiting for the latest scan from your existing monitor.</p></div></section>
+<div class="foot">Updates automatically every 30 seconds · <span>Activity only</span></div>
+</main>
+<script>
+const ORDER=['5m','15m','1h','4h'];
+const LABEL={'5m':'5 MIN','15m':'15 MIN','1h':'1 HOUR','4h':'4 HOURS'};
+const el=id=>document.getElementById(id);
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function age(v){if(!v)return 'Time unavailable';const t=new Date(v).getTime();if(!Number.isFinite(t))return 'Time unavailable';const m=Math.max(0,Math.floor((Date.now()-t)/60000));if(m<1)return 'Just now';if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago';}
+function clock(v){if(!v)return 'Awaiting scan';const d=new Date(v);return Number.isNaN(d.getTime())?'Awaiting scan':'Updated '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+function render(data){
+ if(!data) return;
+ el('state').textContent=data.error?'SCAN ISSUE':data.scan_status==='success'?'LIVE RESULTS':data.scan_status==='scanning'?'SCANNING':'WAITING';
+ el('updated').textContent=clock(data.scan_timestamp);
+ const items=Array.isArray(data.active_currencies)?data.active_currencies:[];
+ const grouped=new Map();
+ for(const item of items){if(!item||!item.currency||!item.timeframe)continue;const tf=String(item.timeframe).toLowerCase();if(!ORDER.includes(tf))continue;if(!grouped.has(item.currency))grouped.set(item.currency,[]);grouped.get(item.currency).push(item);}
+ const currencies=[...grouped.keys()];
+ if(currencies.length){
+  el('signals').innerHTML=currencies.map((currency,index)=>{
+   const frames=grouped.get(currency).sort((a,b)=>ORDER.indexOf(String(a.timeframe).toLowerCase())-ORDER.indexOf(String(b.timeframe).toLowerCase()));
+   return '<article class="signal" style="animation-delay:'+Math.min(index*35,180)+'ms"><div class="signalhead"><div class="currency">'+esc(currency)+'</div><span class="activepill">● ACTIVE</span></div><div class="frames">'+frames.map(item=>'<div class="frame"><small>'+esc(LABEL[String(item.timeframe).toLowerCase()]||item.timeframe)+'</small><strong>Activity detected</strong><div class="when">'+esc(age(item.last_active_at))+'</div></div>').join('')+'</div></article>';
+  }).join('');
+ } else {
+  el('signals').innerHTML='<div class="empty"><div class="emptyicon">⌁</div><h2>No active currencies right now</h2><p>The monitor will show a currency here when the existing scanner detects qualifying activity.</p></div>';
+ }
+ if(data.error){el('state').textContent='SCAN ISSUE';}
+}
+async function refresh(){
+ el('refresh').disabled=true;el('refresh').textContent='↻ Loading';
+ try{const r=await fetch('/latest-scan?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const data=await r.json();render(data);}
+ catch(e){el('state').textContent='CONNECTION ISSUE';el('signals').innerHTML='<div class="error"><h2>Could not connect to monitor</h2><p>Check that the Render service is running, then try refreshing.</p></div>';}
+ finally{el('refresh').disabled=false;el('refresh').textContent='↻ Refresh';}
+}
+el('refresh').addEventListener('click',refresh);
+refresh();setInterval(refresh,30000);
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+</script>
+</body></html>
