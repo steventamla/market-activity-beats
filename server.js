@@ -14,13 +14,14 @@ const NTFY_TOPIC = process.env.NTFY_TOPIC || '';
 const NTFY_TOKEN = process.env.NTFY_TOKEN || '';
 const SCAN_TOKEN = process.env.SCAN_TOKEN || '';
 
-const SCAN_INTERVAL_MS = 60 * 60 * 1000;
+const SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const MAX_HISTORY_ITEMS = 500;
 
 let previousActiveSignals = new Set();
 const recordedHistoryKeys = new Set();
 let scheduledScanRunning = false;
 let scanAndNotifyRunning = false;
+let creditsExhaustedUntil = 0;
 
 const activityHistory = [];
 
@@ -194,7 +195,13 @@ async function runScanAndNotify() {
     const result = await executeMarketScan();
 
     if (result.scan_status !== 'success') {
-      console.error('Scan failed:', result.error || result.scan_status);
+      const errorMessage = String(result.error || result.scan_status || '');
+      console.error('Scan failed:', errorMessage);
+      if (/run out of API credits|API credits were used|current limit being/i.test(errorMessage)) {
+        const now = new Date();
+        creditsExhaustedUntil = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+        console.error(`[SCHEDULE] API credits exhausted. Scheduled scans paused until ${new Date(creditsExhaustedUntil).toISOString()}.`);
+      }
       return result;
     }
 
@@ -301,6 +308,16 @@ app.get('/test-push', requireScanToken, async (req, res) => {
 });
 
 async function scheduledScan() {
+  if (creditsExhaustedUntil && Date.now() < creditsExhaustedUntil) {
+    console.log(`[SCHEDULE] Scan skipped: daily API credits exhausted. Resume after ${new Date(creditsExhaustedUntil).toISOString()}.`);
+    setTimeout(scheduledScan, Math.min(SCAN_INTERVAL_MS, creditsExhaustedUntil - Date.now()));
+    return;
+  }
+  if (creditsExhaustedUntil && Date.now() >= creditsExhaustedUntil) {
+    creditsExhaustedUntil = 0;
+    console.log('[SCHEDULE] Daily credit pause ended; scheduled scanning resumed.');
+  }
+
   if (scheduledScanRunning) {
     console.log(
       '[SCHEDULE] Scan skipped because another scheduled scan is still running.'
@@ -328,7 +345,7 @@ async function scheduledScan() {
     scheduledScanRunning = false;
 
     console.log(
-      '[SCHEDULE] Next scan scheduled in 5 minutes. ' +
+      '[SCHEDULE] Next scan scheduled in 15 minutes. ' +
       'One scan analyses all four timeframes.'
     );
 
