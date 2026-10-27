@@ -14,7 +14,7 @@ const NTFY_TOPIC = process.env.NTFY_TOPIC || '';
 const NTFY_TOKEN = process.env.NTFY_TOKEN || '';
 const SCAN_TOKEN = process.env.SCAN_TOKEN || '';
 
-const SCAN_INTERVAL_MS = 5 * 60 * 1000;
+const SCAN_INTERVAL_MS = 60 * 60 * 1000;
 const MAX_HISTORY_ITEMS = 500;
 
 let previousActiveSignals = new Set();
