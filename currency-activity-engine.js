@@ -294,74 +294,45 @@ function inspectCandles(symbol, candles, timeframeMs) {
     return null;
   }
 
-  const current = candles[0];
+  // Activity is range expansion, not necessarily directional displacement.
+  // Search completed candles from newest to oldest and compare each candle's
+  // full high-low range with ATR calculated only from candles before it.
+  // This can detect a large candle even when it has a long wick or closes
+  // near its open—the behaviour visible in the Market Beats example.
+  const MAX_LOOKBACK_CANDLES = 48;
 
-  // An impulse may form across one candle or several consecutive candles.
-  // Test the shortest qualifying run first, up to six candles. A run must
-  // make a large net directional move relative to prior ATR and show enough
-  // directional efficiency to avoid counting choppy back-and-forth movement.
-  const MAX_IMPULSE_CANDLES = 6;
-  const MIN_NET_MOVE_ATR = ATR_MULTIPLIER;
-  const MIN_DIRECTIONAL_EFFICIENCY = MIN_BODY_RATIO;
+  for (let index = 0; index < Math.min(MAX_LOOKBACK_CANDLES, candles.length - ATR_PERIOD - 1); index++) {
+    const candle = candles[index];
+    const range = candleRange(candle);
+    if (range === null || range <= 0) continue;
 
-  for (let count = 1; count <= MAX_IMPULSE_CANDLES; count++) {
-    const run = candles.slice(0, count); // newest first
-
-    if (run.length !== count) break;
-
-    // Measure the impulse against volatility that existed before this run,
-    // not ATR already inflated by candles inside the impulse itself.
-    const priorCandles = candles.slice(count);
-    const atr = calculatePriorATR(priorCandles);
+    const atr = calculatePriorATR(candles.slice(index + 1));
     if (atr === null) continue;
 
-    const oldest = run[run.length - 1];
-    const oldestOpen = toNumber(oldest.open);
-    const newestClose = toNumber(run[0].close);
-
-    if (oldestOpen === null || newestClose === null) continue;
-
-    const netMove = newestClose - oldestOpen;
-    if (netMove === 0 || Math.abs(netMove) < MIN_NET_MOVE_ATR * atr) {
-      continue;
-    }
-
-    const totalTravel = run.reduce((sum, candle) => {
-      const open = toNumber(candle.open);
-      const close = toNumber(candle.close);
-      return open === null || close === null
-        ? sum
-        : sum + Math.abs(close - open);
-    }, 0);
-
-    const efficiency = totalTravel > 0
-      ? Math.abs(netMove) / totalTravel
-      : 0;
-
-    if (efficiency < MIN_DIRECTIONAL_EFFICIENCY) continue;
+    const rangeRatio = range / atr;
+    if (rangeRatio < ATR_MULTIPLIER) continue;
 
     const [base, quote] = symbol.split('/');
-    const startTime = candleTime(oldest);
-    const endTime = candleTime(current);
-    const totalRange = run.reduce((sum, candle) => {
-      const range = candleRange(candle);
-      return sum + (range === null ? 0 : range);
-    }, 0);
+    const open = toNumber(candle.open);
+    const close = toNumber(candle.close);
+    const startTime = candleTime(candle);
+
+    if (open === null || close === null) continue;
 
     return {
       symbol,
-      datetime: Number.isFinite(endTime)
-        ? new Date(endTime + timeframeMs).toISOString()
+      datetime: Number.isFinite(startTime)
+        ? new Date(startTime + timeframeMs).toISOString()
         : null,
       impulse_start_at: Number.isFinite(startTime)
         ? new Date(startTime).toISOString()
         : null,
-      impulse_candles: count,
+      impulse_candles: 1,
       base,
       quote,
-      rangeRatio: Number((Math.abs(netMove) / atr).toFixed(2)),
-      bodyRatio: Number(efficiency.toFixed(2)),
-      direction: netMove > 0 ? 'bullish' : 'bearish'
+      rangeRatio: Number(rangeRatio.toFixed(2)),
+      bodyRatio: Number((Math.abs(close - open) / range).toFixed(2)),
+      direction: close >= open ? 'bullish' : 'bearish'
     };
   }
 
