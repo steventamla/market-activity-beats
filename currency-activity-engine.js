@@ -339,10 +339,22 @@ function inspectCandles(symbol, candles, timeframeMs) {
   return null;
 }
 
-function scoreCurrency(currency, signals, timeframeLabel) {
-  const matchingPairs = signals.filter(
+function scoreCurrency(currency, signals, timeframeLabel, timeframeMs) {
+  const currencySignals = signals.filter(
     signal => signal.base === currency || signal.quote === currency
   );
+  const eventTimes = currencySignals
+    .map(signal => signal.datetime ? Date.parse(signal.datetime) : NaN)
+    .filter(Number.isFinite);
+  const newestEventMs = eventTimes.length ? Math.max(...eventTimes) : NaN;
+
+  // Pair events must cluster within two candles of the same timeframe.
+  // Do not combine old activity from unrelated dates into one active currency.
+  const matchingPairs = currencySignals.filter(signal => {
+    const time = signal.datetime ? Date.parse(signal.datetime) : NaN;
+    return Number.isFinite(time) && Number.isFinite(newestEventMs) &&
+      newestEventMs - time <= timeframeMs * 2;
+  });
 
   // A bullish base/quote pair supports base strength and quote weakness;
   // a bearish pair supports base weakness and quote strength.
@@ -502,7 +514,8 @@ async function executeMarketScan() {
         row.timeframes[timeframe.label] = scoreCurrency(
           row.currency,
           signalsByTimeframe[timeframe.label],
-          timeframe.label
+          timeframe.label,
+          timeframe.ms
         );
       }
     }
