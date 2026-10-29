@@ -14,7 +14,7 @@ const NTFY_TOPIC = process.env.NTFY_TOPIC || '';
 const NTFY_TOKEN = process.env.NTFY_TOKEN || '';
 const SCAN_TOKEN = process.env.SCAN_TOKEN || '';
 
-const SCAN_INTERVAL_MS = 15 * 60 * 1000;
+const SCAN_INTERVAL_MS = 60 * 60 * 1000; // hourly; stay below the 800-credit daily allowance
 const MAX_HISTORY_ITEMS = 500;
 
 let previousActiveSignals = new Set();
@@ -307,10 +307,19 @@ app.get('/test-push', requireScanToken, async (req, res) => {
   });
 });
 
+function scheduleNextHourlyScan() {
+  const now = new Date();
+  const nextHour = new Date(now);
+  nextHour.setUTCHours(now.getUTCHours() + 1, 0, 5, 0);
+  const delay = Math.max(1000, nextHour.getTime() - Date.now());
+  console.log(`[SCHEDULE] Next scan aligned to the next UTC hour: ${nextHour.toISOString()} (about ${Math.round(delay / 60000)} minutes).`);
+  setTimeout(scheduledScan, delay);
+}
+
 async function scheduledScan() {
   if (creditsExhaustedUntil && Date.now() < creditsExhaustedUntil) {
     console.log(`[SCHEDULE] Scan skipped: daily API credits exhausted. Resume after ${new Date(creditsExhaustedUntil).toISOString()}.`);
-    setTimeout(scheduledScan, Math.min(SCAN_INTERVAL_MS, creditsExhaustedUntil - Date.now()));
+    scheduleNextHourlyScan();
     return;
   }
   if (creditsExhaustedUntil && Date.now() >= creditsExhaustedUntil) {
@@ -345,15 +354,17 @@ async function scheduledScan() {
     scheduledScanRunning = false;
 
     console.log(
-      '[SCHEDULE] Next scan scheduled in 15 minutes. ' +
+      '[SCHEDULE] Scan cycle complete. Next scan will align to the next UTC hour. ' +
       'One scan analyses all four timeframes.'
     );
 
-    setTimeout(scheduledScan, SCAN_INTERVAL_MS);
+    scheduleNextHourlyScan();
   }
 }
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  setTimeout(scheduledScan, 5000);
+  console.log('[SCHEDULE] Hourly scanning enabled to protect the 800-credit daily allowance.');
+  // Do not trigger a costly scan immediately on every restart/redeploy.
+  scheduleNextHourlyScan();
 });
