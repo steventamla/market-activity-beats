@@ -37,7 +37,7 @@
       <h1>Market Activity Finder</h1>
       <div class="muted">Currency activity across 5-minute, 15-minute, 1-hour and 4-hour timeframes</div>
     </div>
-    <span class="pill">15-minute scan cycle</span>
+    <span class="pill">Hourly scan cycle</span>
   </section>
   <section class="stats">
     <div class="stat"><span class="muted">Scanner status</span><strong id="status">Waiting</strong></div>
@@ -75,7 +75,7 @@
       </table>
     </div>
   </section>
-  <div class="muted">Dashboard refreshes saved results every 30 seconds. The scanner waits 5 minutes after each completed scan before starting the next one; a scan itself can take several minutes. Each scan requests data for 28 pairs; API usage depends on your Twelve Data plan. Refreshing this page does not start a scan.</div>
+  <div class="muted">Dashboard refreshes saved results every 30 seconds. The scanner runs once per hour, aligned to the next UTC hour, and analyses all four timeframes from one set of pair data. Each scan requests data for 28 pairs to help stay within the 800-credit daily allowance. Refreshing this page does not start a scan.</div>
 </main>
 <script>
   const currencies = ['USD','EUR','GBP','JPY','CHF','AUD','CAD','NZD'];
